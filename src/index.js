@@ -20,6 +20,8 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 // 수집 범위: 수도권 (서울·인천·경기). 넓히면 KV 데이터가 커져 요청당 CPU가 늘어남
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
+// 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
+const VERSION = '2026-10-02.7';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -91,7 +93,7 @@ async function route(url, req, env, ctx) {
   }
 
   if (p === '/api/status') {
-    return json({ updatedAt: ds.updatedAt, venues: ds.venues.length, exhibitions: ds.venues.reduce((n, v) => n + v.ex.length, 0), stats: ds.stats });
+    return json({ version: VERSION, updatedAt: ds.updatedAt, venues: ds.venues.length, exhibitions: ds.venues.reduce((n, v) => n + v.ex.length, 0), stats: ds.stats });
   }
 
   if (p === '/api/feed') {
@@ -172,7 +174,7 @@ async function refreshApis(env) {
 async function rebuild(env) {
   const api = (await env.CACHE.get(API_KEY, 'json')) || { items: [], stats: {} };
   const crawled = await crawlItems(env);
-  const stats = { ...api.stats, apiAt: api.at, crawledExhibitions: crawled.length };
+  const stats = { version: VERSION, ...api.stats, apiAt: api.at, crawledExhibitions: crawled.length };
   const today = kstToday();
   const all = [...api.items, ...crawled];
   const active = all.filter(it => it.end >= today);
