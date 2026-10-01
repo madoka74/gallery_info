@@ -308,9 +308,9 @@ export function htmlToText(html, base) {
   h = h.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
        .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&amp;/g, '&');
   h = h.replace(/[ \t\f\r]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{2,}/g, '\n').trim();
-  // 메뉴·푸터처럼 반복되는 짧은 줄은 한 번만 (토큰 절약)
   const seen = new Set();
-  let lines = h.split('\n').filter(line => { if (line.length > 40) return true; if (seen.has(line)) return false; seen.add(line); return true; });
+  // 같은 줄은 길이와 상관없이 한 번만 (슬라이드 배너는 같은 이미지·문구를 수십 번 복제해 둠)
+  let lines = h.split('\n').filter(line => { if (seen.has(line)) return false; seen.add(line); return true; });
   // 링크 하나에 짧은 글자만 있는 줄이 8줄 넘게 이어지면 메뉴 덩어리로 보고 버림
   const isMenuLine = l => /^\[LINK [^\]]+\]\s*\S.{0,18}$/.test(l) && !/\d{4}[.\-/]\d{1,2}/.test(l);
   const out = [];
