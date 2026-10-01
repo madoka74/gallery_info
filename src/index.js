@@ -84,6 +84,12 @@ async function route(url, req, env, ctx) {
   const today = kstToday();
   const lat = num(q('lat'), 37.4979), lng = num(q('lng'), 127.0276);
 
+  if (p === '/api/dupes') {
+    if (!isAdmin(url, env)) return json({ error: 'token이 맞지 않습니다' }, 403);
+    const active = ds.venues.filter(v => v.ex.some(e => e.end >= today));
+    return json({ venues: active.length, candidates: dupeCandidates(active) });
+  }
+
   if (p === '/api/status') {
     return json({ updatedAt: ds.updatedAt, venues: ds.venues.length, exhibitions: ds.venues.reduce((n, v) => n + v.ex.length, 0), stats: ds.stats });
   }
@@ -290,24 +296,29 @@ function buildVenues(items, stats) {
     keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee; keep.artist ||= other.artist;
     byEx.set(k, keep);
   }
-  // 2) 공간 키로 묶기
+  // 2) 공간 키로 묶기 (홈페이지 수집 공간은 sources.js의 공간 하나 = 한 묶음)
   const groups = new Map(), orphans = [];
   for (const it of byEx.values()) {
     if (it.lat == null) { orphans.push(it); continue; }
     const k = placeKey(it.place);
     if (!k) continue;
-    if (!groups.has(k)) groups.set(k, { key: k, names: [], addr: '', lat: it.lat, lng: it.lng, ex: [] });
+    if (!groups.has(k)) groups.set(k, { key: k, names: [], addr: '', lat: it.lat, lng: it.lng, ex: [], crawl: null, aliases: [] });
     const g = groups.get(k);
     g.names.push(placeName(it.place)); g.addr ||= it.addr; g.ex.push(it);
+    if (it.src === 'crawl' && !g.crawl) { g.crawl = it.place; g.aliases = (it.aliases || []).map(simKey).filter(Boolean); }
   }
-  // 3) 이름이 서로 포함되고 150m 이내면 같은 공간 ("한가람미술관" ⊂ "예술의전당 한가람미술관")
-  const list = [...groups.values()].sort((a, b) => b.key.length - a.key.length);
+  // 3) 같은 공간 합치기. 홈페이지 수집 공간을 기준(host)으로 먼저 놓고, 이름이 길수록 먼저
+  const list = [...groups.values()].sort((a, b) => (!!b.crawl - !!a.crawl) || b.key.length - a.key.length);
   const merged = [];
   for (const g of list) {
-    const host = merged.find(m => (m.key.includes(g.key) || g.key.includes(m.key)) && haversine(m.lat, m.lng, g.lat, g.lng) < 150);
-    if (host) { host.ex.push(...g.ex); host.names.push(...g.names); host.addr ||= g.addr; }
-    else merged.push(g);
+    const host = merged.find(m => sameVenue(m, g));
+    if (host) {
+      host.ex.push(...g.ex); host.names.push(...g.names); host.addr ||= g.addr;
+      // 수집 공간 좌표는 근사값이라, 공공 API 좌표가 있으면 그걸 씀
+      if (host.crawl && !g.crawl && !host.preciseCoords) { host.lat = g.lat; host.lng = g.lng; host.preciseCoords = true; }
+    } else merged.push(g);
   }
+  stats.mergedGroups = list.length - merged.length;
   // 4) 좌표 없는 전시: 이름이 같은(또는 서로 포함하는) 공간이 있으면 거기에 붙임
   let rescued = 0;
   for (const it of orphans) {
@@ -318,12 +329,38 @@ function buildVenues(items, stats) {
   stats.orphansRescued = rescued; stats.orphansDropped = orphans.length - rescued;
   const venues = merged.map(g => ({
     id: 'p' + hash(g.key),
-    name: mostCommon(g.names),
+    name: g.crawl || mostCommon(g.names),
     addr: g.addr, lat: +g.lat.toFixed(6), lng: +g.lng.toFixed(6),
     ex: dedupeTitles(g.ex).map(({ place, addr, lat, lng, ...e }) => e)
   }));
   stats.venues = venues.length; stats.exhibitions = venues.reduce((n, v) => n + v.ex.length, 0);
   return venues;
+}
+
+// 공간 이름 비교용: 띄어쓰기·기호 제거 + '서울관/서울점/본관' 같은 꼬리 제거
+function simKey(name) {
+  return norm(String(name || '').replace(/\(재\)|재단법인/g, ''))
+    .replace(/(서울관|서울점|서울|본관|본점|seoul)$/i, '');
+}
+function sameVenue(a, b) {
+  const d = haversine(a.lat, a.lng, b.lat, b.lng);
+  const ka = simKey(a.key), kb = simKey(b.key);
+  if (!ka || !kb) return false;
+  if (ka === kb && d < 700) return true;                                        // 같은 이름
+  if (d < 700 && (a.aliases.includes(kb) || b.aliases.includes(ka))) return true; // sources.js 별칭
+  const contains = Math.min(ka.length, kb.length) >= 3 && (ka.includes(kb) || kb.includes(ka));
+  return contains && d < (a.crawl || b.crawl ? 400 : 150);                       // 한쪽 이름이 다른 쪽에 포함
+}
+// 점검용: 합치지 못한 '비슷한 공간' 쌍
+function dupeCandidates(venues) {
+  const bi = s => { const k = simKey(s), out = new Set(); for (let i = 0; i < k.length - 1; i++) out.add(k.slice(i, i + 2)); return out; };
+  const sim = (a, b) => { const A = bi(a), B = bi(b); let n = 0; A.forEach(x => B.has(x) && n++); return A.size + B.size ? (2 * n) / (A.size + B.size) : 0; };
+  const out = [];
+  for (let i = 0; i < venues.length; i++) for (let j = i + 1; j < venues.length; j++) {
+    const a = venues[i], b = venues[j], d = haversine(a.lat, a.lng, b.lat, b.lng), s2 = sim(a.name, b.name);
+    if ((d < 60) || (s2 >= 0.5 && d < 2000)) out.push({ a: a.name, b: b.name, meters: Math.round(d), similarity: +s2.toFixed(2), aId: a.id, bId: b.id });
+  }
+  return out.sort((x, y) => y.similarity - x.similarity || x.meters - y.meters).slice(0, 80);
 }
 
 // 같은 전시가 여러 출처에 있으면: 홈페이지 수집 > 서울시 > 문화포털 순으로 대표를 고름

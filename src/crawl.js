@@ -56,7 +56,7 @@ export async function crawlItems(env) {
   const out = [];
   for (const src of SOURCES) {
     for (const e of state[src.id]?.items || []) {
-      out.push({ ...e, id: `w-${src.id}-${e.id}`, src: 'crawl', place: src.name, addr: src.addr, lat: src.lat, lng: src.lng });
+      out.push({ ...e, id: `w-${src.id}-${e.id}`, src: 'crawl', srcId: src.id, aliases: src.aliases || [], place: src.name, addr: src.addr, lat: src.lat, lng: src.lng });
     }
   }
   return out;
