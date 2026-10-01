@@ -266,9 +266,10 @@ async function readHtml(res) {
 
 async function rendered(env, url, retried, gentle) {
   for (const path of ['browser-run', 'browser-rendering']) {
-    // gentle: 페이지가 스스로 이동(리다이렉트)하는 사이트용. 로드 후 잠깐 기다렸다 읽음
+    // gentle: 스스로 이동(리다이렉트)하거나 이미지·영상이 끝없이 로딩돼 시간 초과 나는 사이트용.
+    // 문서 뼈대만 받으면 바로 진행하고, 화면이 그려질 시간을 잠깐 준 뒤 읽음
     const opts = gentle
-      ? { url, gotoOptions: { waitUntil: 'load', timeout: 25000 }, waitForTimeout: 4000 }
+      ? { url, gotoOptions: { waitUntil: 'domcontentloaded', timeout: 40000 }, waitForTimeout: 5000 }
       : { url, gotoOptions: { waitUntil: 'networkidle2', timeout: 25000 } };
     const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/${path}/content`, {
       method: 'POST',
@@ -283,7 +284,7 @@ async function rendered(env, url, retried, gentle) {
       return rendered(env, url, true, gentle);
     }
     const j = await r.json().catch(() => ({}));
-    if ((!r.ok || j.success === false) && !gentle && /execution context|navigation/i.test(JSON.stringify(j.errors || ''))) return rendered(env, url, retried, true);
+    if ((!r.ok || j.success === false) && !gentle && /execution context|navigation|timeout/i.test(JSON.stringify(j.errors || ''))) return rendered(env, url, retried, true);
     if (!r.ok || j.success === false) throw new Error('브라우저 렌더링 실패: ' + JSON.stringify(j.errors || r.status).slice(0, 200));
     return typeof j.result === 'string' ? j.result : '';
   }
@@ -475,7 +476,8 @@ async function gemini(env, prompt, schema = SCHEMA, pick = 'exhibitions') {
 // 모델 출력 검증: 날짜 형식, 끝난 전시 제거, 텍스트에 없는 URL 제거, 같은 제목 중복 제거
 export function clean(list, text, today) {
   const seen = new Set(), out = [], pending = [];
-  const inText = u => u && /^https?:\/\//.test(u) && text.includes(u) ? u.replace(/^http:\/\//, 'https://') : '';
+  // https가 안 되는 사이트(학고재 등)도 있어서 주소는 페이지에 적힌 그대로 둠
+  const inText = u => u && /^https?:\/\//.test(u) && text.includes(u) ? u : '';
   for (const x of list) {
     const title = String(x.title || '').trim();
     const start = normDate(x.start), end = normDate(x.end);

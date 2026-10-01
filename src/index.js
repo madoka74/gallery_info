@@ -22,7 +22,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.22';
+const VERSION = '2026-10-02.24';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -127,6 +127,16 @@ async function route(url, req, env, ctx) {
   }
   if (p === '/api/debug') {
     return new Response(await debugRaw(url.searchParams.get('src'), env), { headers: { 'content-type': 'text/plain; charset=utf-8', ...cors() } });
+  }
+
+  // http 전용 사이트(학고재 등)의 포스터: https 페이지에서는 브라우저가 막으므로 여기서 대신 받아 줌 (이미지만)
+  if (p === '/api/img') {
+    const u = String(q('u') || '');
+    if (!/^http:\/\/[^/]+\//i.test(u)) return new Response('bad url', { status: 400 });
+    const r = await fetch(u, { headers: { 'user-agent': 'Mozilla/5.0 GakkaunJeonsi' }, cf: { cacheTtl: 86400, cacheEverything: true } });
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || !/^image\//i.test(ct)) return new Response('not an image', { status: 404 });
+    return new Response(r.body, { headers: { 'content-type': ct, 'cache-control': 'public, max-age=86400' } });
   }
 
   if (p === '/api/geocode') {

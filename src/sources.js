@@ -10,8 +10,8 @@ export const SOURCES = [
   // ---- 미술관 ----
   { id: 'leeum', name: '리움미술관', addr: '용산구 이태원로55길 60-16', lat: 37.5383, lng: 126.9990, home: 'https://www.leeumhoam.org', url: 'https://www.leeumhoam.org/leeum/exhibition', render: true, aliases: ['삼성미술관 리움','삼성미술관 Leeum','리움','Leeum'] },
   { id: 'hoam', name: '호암미술관', addr: '경기 용인시 처인구 포곡읍 에버랜드로562번길 38', lat: 37.2936, lng: 127.2003, home: 'https://www.leeumhoam.org', url: 'https://www.leeumhoam.org/hoam/exhibition', render: true, aliases: ['삼성 호암미술관','Hoam Museum of Art','호암'] },
-  // 뮤지엄 산: 홈페이지가 자바스크립트 앱이라 렌더링 필수. 전시 목록 주소가 따로 안 보여서 홈에서 뽑고, 없으면 홈 링크에서 전시 페이지를 찾음
-  { id: 'museumsan', name: '뮤지엄 산', addr: '강원 원주시 지정면 오크밸리2길 260', lat: 37.4157, lng: 127.8228, home: 'https://www.museumsan.org', url: 'https://www.museumsan.org/', render: true, aliases: ['뮤지엄산','Museum SAN','뮤지엄SAN','한솔뮤지엄'] },
+  // 뮤지엄 산: 홈페이지가 자바스크립트 앱이라 렌더링 필수
+  { id: 'museumsan', name: '뮤지엄 산', addr: '강원 원주시 지정면 오크밸리2길 260', lat: 37.4157, lng: 127.8228, home: 'https://www.museumsan.org', url: 'https://www.museumsan.org/art-museum?tab=exhibition-intro', render: true, aliases: ['뮤지엄산','Museum SAN','뮤지엄SAN','한솔뮤지엄'] },
   // 예술의전당: 미술관·박물관 일정 페이지 하나에 세 관 전시가 함께 나옴 → 관별로 나눠 수집
   { id: 'sac-hangaram', name: '예술의전당 한가람미술관', addr: '서초구 남부순환로 2406', lat: 37.4790, lng: 127.0118, home: 'https://www.sac.or.kr', url: 'https://www.sac.or.kr/site/main/program/schedule?tab=3', render: true, branch: '한가람미술관 (1~7전시실). 한가람디자인미술관·서울서예박물관 전시는 제외', aliases: ['한가람미술관','예술의전당 한가람미술관 제7전시실','Hangaram Art Museum'] },
   { id: 'sac-design', name: '예술의전당 한가람디자인미술관', addr: '서초구 남부순환로 2406', lat: 37.4784, lng: 127.0124, home: 'https://www.sac.or.kr', url: 'https://www.sac.or.kr/site/main/program/schedule?tab=3', render: true, branch: '한가람디자인미술관만', aliases: ['한가람디자인미술관','Hangaram Design Museum'] },
@@ -41,7 +41,7 @@ export const SOURCES = [
   // ---- 갤러리: 삼청·종로 ----
   { id: 'kukje', name: '국제갤러리', addr: '종로구 삼청로 54', lat: 37.5806, lng: 126.9806, home: 'https://www.kukjegallery.com', url: 'https://www.kukjegallery.com/exhibitions', branch: '서울 (부산 제외)', aliases: ['Kukje Gallery','국제갤러리 서울'] },
   { id: 'hyundai', name: '갤러리현대', addr: '종로구 삼청로 14', lat: 37.5800, lng: 126.9810, home: 'https://www.galleryhyundai.com', url: 'https://www.galleryhyundai.com/exhibition', aliases: ['갤러리 현대','Gallery Hyundai'] },
-  { id: 'hakgojae', name: '학고재', addr: '종로구 삼청로 50', lat: 37.5797, lng: 126.9815, home: 'https://www.hakgojae.com', url: 'https://www.hakgojae.com' },
+  { id: 'hakgojae', name: '학고재', addr: '종로구 삼청로 50', lat: 37.5797, lng: 126.9815, home: 'http://www.hakgojae.com', url: 'http://www.hakgojae.com/page/1-1.php', aliases: ['학고재갤러리','학고재 갤러리','Hakgojae Gallery'] },
   { id: 'arario', name: '아라리오갤러리 서울', addr: '종로구 율곡로 83', lat: 37.5793, lng: 126.9853, home: 'https://www.arariogallery.com', url: 'https://www.arariogallery.com', branch: '서울 (천안·상하이 제외)', aliases: ['아라리오갤러리','ARARIO GALLERY'] },
   { id: 'pkm', name: 'PKM 갤러리', addr: '종로구 삼청로7길 40', lat: 37.5823, lng: 126.9819, home: 'https://www.pkmgallery.com', url: 'https://www.pkmgallery.com', aliases: ['PKM갤러리','PKM Gallery'] },
   { id: 'leeahn', name: '리안갤러리 서울', addr: '종로구 창성동', lat: 37.5795, lng: 126.9757, home: 'http://www.leeahngallery.com', url: 'http://www.leeahngallery.com', branch: '서울 (대구 제외)' },
