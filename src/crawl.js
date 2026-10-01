@@ -4,7 +4,55 @@
 // 비밀값: GEMINI_API_KEY (필수), CF_ACCOUNT_ID + CF_API_TOKEN (자바스크립트로 그려지는 페이지용, 선택)
 // 변수:   GEMINI_MODEL (기본 gemini-3.5-flash-lite), CRAWL_BATCH (한 번에 수집할 공간 수, 기본 4)
 
-import { SOURCES } from './sources.js';
+import { SOURCES as SEED } from './sources.js';
+
+/* ---------- 공간 목록: 서버 저장소(KV)에 두고 앱에서 추가·수정·삭제 ---------- */
+// sources.js는 초기값. 코드로 넣은 공간 중 앱에서 손대지 않은 것은 코드 수정이 그대로 반영됨
+export const SOURCES_KEY = 'sources:v1';
+export async function loadSources(env) {
+  const st = (await env.CACHE.get(SOURCES_KEY, 'json')) || { list: [], deleted: [] };
+  const del = new Set(st.deleted || []);
+  let changed = !st.seeded;
+  for (const seed of SEED) {
+    if (del.has(seed.id)) continue;
+    const i = st.list.findIndex(s => s.id === seed.id);
+    if (i < 0) { st.list.push({ ...seed, origin: 'seed' }); changed = true; }
+    else if (st.list[i].origin === 'seed' && !st.list[i].edited && JSON.stringify({ ...seed, origin: 'seed' }) !== JSON.stringify(st.list[i])) {
+      st.list[i] = { ...seed, origin: 'seed' }; changed = true;
+    }
+  }
+  st.seeded = true;
+  if (changed) await env.CACHE.put(SOURCES_KEY, JSON.stringify(st));
+  return st.list;
+}
+export async function saveSource(env, src) {
+  const st = (await env.CACHE.get(SOURCES_KEY, 'json')) || { list: [], deleted: [] };
+  await loadSources(env); // 초기값 채우기
+  const cur = (await env.CACHE.get(SOURCES_KEY, 'json')) || st;
+  const i = cur.list.findIndex(s => s.id === src.id);
+  const next = { ...(i >= 0 ? cur.list[i] : { origin: 'user' }), ...src, edited: true };
+  if (i >= 0) cur.list[i] = next; else cur.list.push(next);
+  cur.deleted = (cur.deleted || []).filter(id => id !== src.id);
+  await env.CACHE.put(SOURCES_KEY, JSON.stringify(cur));
+  return next;
+}
+export async function deleteSource(env, id) {
+  await loadSources(env);
+  const cur = await env.CACHE.get(SOURCES_KEY, 'json');
+  cur.list = cur.list.filter(s => s.id !== id);
+  cur.deleted = [...new Set([...(cur.deleted || []), id])];
+  await env.CACHE.put(SOURCES_KEY, JSON.stringify(cur));
+  const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
+  delete state[id];
+  await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
+}
+// 미리보기에서 이미 뽑은 결과를 그대로 수집 결과로 저장 (Gemini를 한 번 더 부르지 않도록)
+export async function storeCrawlResult(env, id, r) {
+  const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
+  state[id] = { url: r.url, srcUrl: r.url, hash: r.hash || '', ver: EXTRACT_VER, items: r.items || [], pending: r.pending || 0, via: r.via || 'html',
+    changed: true, checkedAt: Date.now(), nextAt: Date.now() + RECHECK_MS, ok: true, error: '', renderError: '' };
+  await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
+}
 
 export const CRAWL_KEY = 'crawl:v1';
 const UA = 'Mozilla/5.0 (compatible; GakkaunJeonsiBot/1.0; exhibition listings, once a day)';
@@ -17,6 +65,7 @@ const EXTRACT_VER = 4;            // 추출 방식이 바뀌면 올림 → 페�
 
 /* ---------- 배치 실행 ---------- */
 export async function crawlBatch(env, opts = {}) {
+  const SOURCES = await loadSources(env);
   const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
   const now = Date.now();
   const dueAt = st => st?.nextAt ?? ((st?.checkedAt || 0) + RECHECK_MS);
@@ -52,6 +101,7 @@ export async function crawlBatch(env, opts = {}) {
 const isTransient = msg => /^Gemini (429|5\d\d)|HTTP (5\d\d)|연결 실패|timed? ?out|렌더링 실패/i.test(msg);
 
 export async function crawlItems(env) {
+  const SOURCES = await loadSources(env);
   const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
   const out = [];
   // 한 페이지를 여러 공간이 나눠 읽는 경우(예술의전당 3관, 국립현대미술관 서울·덕수궁, 대림·디뮤지엄)
@@ -85,6 +135,7 @@ function hallScore(hall, src) {
 }
 
 export async function crawlStatus(env) {
+  const SOURCES = await loadSources(env);
   const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
   return SOURCES.map(s => {
     const st = state[s.id] || {};
@@ -96,6 +147,7 @@ export async function crawlStatus(env) {
 
 // 점검용: 한 공간의 페이지가 어떻게 읽히는지 그대로 보여줌 (Gemini 호출 없음)
 export async function peek(env, id, opts = {}) {
+  const SOURCES = await loadSources(env);
   const src = SOURCES.find(s => s.id === id);
   if (!src && !opts.url) throw new Error('없는 id입니다: ' + id);
   const base = src || { id: 'adhoc', name: '', addr: '', home: opts.url };
@@ -396,7 +448,7 @@ ${text}`;
 }
 
 let lastGemini = 0;
-async function gemini(env, prompt) {
+async function gemini(env, prompt, schema = SCHEMA, pick = 'exhibitions') {
   const wait = lastGemini + GEMINI_GAP_MS - Date.now();
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   lastGemini = Date.now();
@@ -406,7 +458,7 @@ async function gemini(env, prompt) {
     headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: SCHEMA }
+      generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema }
     })
   });
   let res = await call();
@@ -417,7 +469,7 @@ async function gemini(env, prompt) {
   const out = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
   let parsed;
   try { parsed = JSON.parse(out); } catch { throw new Error('Gemini 응답이 JSON이 아닙니다: ' + out.slice(0, 120)); }
-  return parsed.exhibitions || [];
+  return pick ? (parsed[pick] || []) : parsed;
 }
 
 // 모델 출력 검증: 날짜 형식, 끝난 전시 제거, 텍스트에 없는 URL 제거, 같은 제목 중복 제거
@@ -453,4 +505,63 @@ function hashStr(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt
 async function sha1(s) {
   const d = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+
+/* ---------- 새 공간 진단: 홈페이지 → 이름·주소·지점·전시 목록 페이지 ---------- */
+const ID_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    name: { type: 'STRING', description: '전시공간의 공식 이름. 한국어 이름이 있으면 한국어' },
+    address: { type: 'STRING', description: '전시공간 주소(도로명 우선). 보통 페이지 아래쪽에 있음. 없으면 빈 문자열' },
+    branches: { type: 'ARRAY', items: { type: 'STRING' }, description: '지점·관이 여러 곳이면 그 이름들(예: 서울, 부산). 하나뿐이면 빈 배열' },
+    exhibitionListUrl: { type: 'STRING', description: '현재·예정 전시 목록 페이지 주소. 반드시 텍스트의 [LINK 주소] 중 하나 그대로. 홈 화면에 전시 목록이 있으면 홈 주소' },
+    note: { type: 'STRING', description: '참고할 점 한 문장(예: 전시 준비 중, 인스타그램만 운영 등). 없으면 빈 문자열' }
+  },
+  required: ['name', 'address', 'branches', 'exhibitionListUrl', 'note']
+};
+export async function identify(env, homeUrl) {
+  if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY 비밀값이 없습니다');
+  let page = await getPage(env, { render: false }, homeUrl);
+  if (page.ok && page.text.length < 1500 && canRender(env)) {
+    const p2 = await getPage(env, { render: true }, homeUrl);
+    if (p2.ok && p2.text.length > page.text.length) page = p2;
+  }
+  if (!page.ok && canRender(env)) page = await getPage(env, { render: true }, homeUrl);
+  if (!page.ok) throw new Error('홈페이지를 열지 못했어요: ' + (page.error || page.renderError || ''));
+  const prompt = `다음은 어떤 미술관·갤러리 홈페이지(${homeUrl})에서 뽑은 텍스트다. [LINK 주소]는 링크, [IMG 주소]는 이미지다.
+이 공간의 이름, 주소, 지점 목록, 그리고 '현재·예정 전시 목록'을 보여주는 페이지 주소를 찾아라.
+- exhibitionListUrl은 반드시 텍스트에 있는 [LINK 주소] 중 하나를 그대로 쓴다. 지난 전시(archive, past) 페이지는 고르지 마라.
+- 주소는 페이지에 적힌 그대로. 없으면 빈 문자열.
+
+----- 홈페이지 텍스트 -----
+${page.text.slice(0, 15000)}`;
+  const r = await gemini(env, prompt, ID_SCHEMA, null);
+  let listUrl = String(r.exhibitionListUrl || '').trim();
+  if (!listUrl || !(page.text.includes(listUrl) || listUrl === homeUrl)) {
+    listUrl = (await discover(env, { home: homeUrl }, null, page.via === 'render')) || homeUrl; // 모델이 고른 주소가 텍스트에 없으면 직접 찾음
+  }
+  return { name: String(r.name || '').trim(), address: String(r.address || '').trim(), branches: (r.branches || []).map(String).filter(Boolean),
+    pageUrl: listUrl, note: String(r.note || '').trim(), render: page.via === 'render' };
+}
+
+// 정해진 전시 페이지에서 실제로 뽑아 보기 (일반 → 렌더링 → 상세 페이지 순으로 시도)
+export async function inspect(env, src, pageUrl) {
+  if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY 비밀값이 없습니다');
+  let page = await getPage(env, src, pageUrl);
+  if (!page.ok && !src.render && canRender(env)) page = await getPage(env, { ...src, render: true }, pageUrl);
+  if (!page.ok) return { ok: false, url: pageUrl, error: page.error || '페이지를 열지 못했어요', renderError: page.renderError || '' };
+  let r = await extract(env, src, page.text, pageUrl);
+  if (!r.items.length && !r.pending.length && page.via === 'html' && canRender(env)) {
+    const p2 = await getPage(env, { ...src, render: true }, pageUrl);
+    if (p2.ok && p2.via === 'render') { const r2 = await extract(env, src, p2.text, pageUrl); if (r2.items.length || r2.pending.length) { page = p2; r = r2; } }
+  }
+  let items = r.items;
+  if (r.pending.length) {
+    const more = await extractDetails(env, src, r.pending.slice(0, page.via === 'render' ? 4 : DETAIL_MAX), page.via === 'render');
+    const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
+    items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
+  }
+  return { ok: true, url: pageUrl, via: page.via, render: page.via === 'render', items, pending: r.pending.length,
+    hash: await sha1(page.text), textLength: page.text.length, renderError: page.renderError || '' };
 }

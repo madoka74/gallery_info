@@ -12,7 +12,7 @@
 //   CF_ACCOUNT_ID, CF_API_TOKEN  (선택) 자바스크립트로 그려지는 페이지를 읽는 브라우저 렌더링용
 //   KAKAO_REST_KEY  (선택) 기준 위치 검색용 카카오 로컬 API 키. 없으면 OpenStreetMap으로 검색
 
-import { crawlBatch, crawlItems, crawlStatus, peek } from './crawl.js';
+import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect } from './crawl.js';
 
 // 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
 // from~to는 '기간이 겹치는' 항목을 돌려줌. 정상 resultCode는 00.
@@ -22,7 +22,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.20';
+const VERSION = '2026-10-02.21';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -58,7 +58,53 @@ async function route(url, req, env, ctx) {
   const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
   const q = k => body[k] ?? url.searchParams.get(k);
 
-  if (['/api/refresh', '/api/debug', '/api/crawl', '/api/sources', '/api/peek'].includes(p) && !isAdmin(url, env)) return json({ error: 'token이 맞지 않습니다' }, 403);
+  if ((['/api/refresh', '/api/debug', '/api/crawl', '/api/sources', '/api/peek'].includes(p) || p.startsWith('/api/admin/')) && !isAdmin(url, env, req)) return json({ error: '관리자 토큰이 맞지 않습니다' }, 403);
+
+  /* ---- 공간 관리 (관리자) ---- */
+  if (p === '/api/admin/sources') {
+    const [list, status] = await Promise.all([loadSources(env), crawlStatus(env)]);
+    const st = new Map(status.map(x => [x.id, x]));
+    return json({ sources: list.map(s => ({ ...s, status: st.get(s.id) || null })) });
+  }
+  if (p === '/api/admin/probe') {
+    // 홈페이지 주소 → 이름·주소·좌표·전시 페이지를 찾고, 실제로 전시를 뽑아 미리보기로 돌려줌 (저장은 안 함)
+    const home = normUrl(body.url);
+    if (!home) return json({ error: '홈페이지 주소를 확인해 주세요' }, 400);
+    let name = String(body.name || '').trim(), addr = String(body.addr || '').trim();
+    let pageUrl = normUrl(body.page), branches = [], note = '', render = !!body.render;
+    if (!name || !pageUrl) {
+      const id = await identify(env, home);
+      name ||= id.name; addr ||= id.address; pageUrl ||= id.pageUrl; branches = id.branches; note = id.note; render ||= id.render;
+    }
+    let lat = parseFloat(body.lat), lng = parseFloat(body.lng), geoName = '';
+    if ((!Number.isFinite(lat) || !Number.isFinite(lng) || body.regeo) && addr) {
+      const g = await geocode(env, addr, 37.5665, 126.978);
+      if (g.places[0]) { lat = g.places[0].lat; lng = g.places[0].lng; geoName = g.places[0].name; }
+    }
+    const branch = String(body.branch || '').trim();
+    const result = await inspect(env, { name, addr, branch, home, render }, pageUrl || home);
+    const draft = { id: body.id || await newSourceId(env, home, branch), name, addr, lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null,
+      home, url: result.url, branch, render: !!result.render, aliases: Array.isArray(body.aliases) ? body.aliases : [] };
+    return json({ draft, branches, note, geoName, result });
+  }
+  if (p === '/api/admin/sources/save') {
+    const s = body.source || {};
+    if (!s.id || !s.name || !normUrl(s.url) || !Number.isFinite(+s.lat) || !Number.isFinite(+s.lng)) return json({ error: '이름, 전시 페이지, 위치(좌표)가 모두 있어야 저장할 수 있어요' }, 400);
+    const saved = await saveSource(env, {
+      id: String(s.id), name: String(s.name).trim(), addr: String(s.addr || '').trim(), lat: +s.lat, lng: +s.lng,
+      home: normUrl(s.home) || normUrl(s.url), url: normUrl(s.url), branch: String(s.branch || '').trim(), render: !!s.render,
+      aliases: (Array.isArray(s.aliases) ? s.aliases : String(s.aliases || '').split(',')).map(x => String(x).trim()).filter(Boolean)
+    });
+    if (body.result && body.result.ok) await storeCrawlResult(env, saved.id, body.result);
+    const stats = await rebuild(env);
+    return json({ ok: true, source: saved, stats });
+  }
+  if (p === '/api/admin/sources/delete') {
+    if (!body.id) return json({ error: 'id가 없어요' }, 400);
+    await deleteSource(env, String(body.id));
+    const stats = await rebuild(env);
+    return json({ ok: true, stats });
+  }
   if (p === '/api/refresh') {
     // 공공 API 다시 받기 + 데이터 다시 묶기 (홈페이지 수집은 /api/crawl)
     await refreshApis(env);
@@ -94,7 +140,7 @@ async function route(url, req, env, ctx) {
   const lat = num(q('lat'), 37.4979), lng = num(q('lng'), 127.0276);
 
   if (p === '/api/dupes') {
-    if (!isAdmin(url, env)) return json({ error: 'token이 맞지 않습니다' }, 403);
+    if (!isAdmin(url, env, req)) return json({ error: '관리자 토큰이 맞지 않습니다' }, 403);
     const active = ds.venues.filter(v => v.ex.some(e => e.end >= today));
     return json({ venues: active.length, candidates: dupeCandidates(active) });
   }
@@ -507,8 +553,24 @@ async function debugRaw(src, env) {
   for (const k of [env.SEOUL_KEY, env.DATA_GO_KR_KEY]) if (k) text = text.split(k).join('***');
   return text.slice(0, 6000);
 }
-function isAdmin(url, env) {
-  return !!env.ADMIN_TOKEN && url.searchParams.get('token') === env.ADMIN_TOKEN;
+function isAdmin(url, env, req) {
+  const t = url.searchParams.get('token') || (req && req.headers.get('x-admin-token')) || '';
+  return !!env.ADMIN_TOKEN && t === env.ADMIN_TOKEN;
+}
+function normUrl(u) {
+  u = String(u || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try { const x = new URL(u); return /\./.test(x.hostname) ? x.href : ''; } catch { return ''; }
+}
+// 새 공간 id: 도메인 이름 + (지점) → 겹치면 숫자 붙임
+async function newSourceId(env, home, branch) {
+  const host = new URL(home).hostname.replace(/^www\./, '').split('.')[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'venue';
+  const base = branch ? `${host}-${hash(branch).slice(0, 4)}` : host;
+  const ids = new Set((await loadSources(env)).map(s => s.id));
+  let id = base, n = 2;
+  while (ids.has(id)) id = `${base}${n++}`;
+  return id;
 }
 
 /* ---------------- helpers ---------------- */
