@@ -8,8 +8,8 @@
 export const SOURCES = [
   // ---- 미술관 ----
   { id: 'leeum', name: '리움미술관', addr: '용산구 이태원로55길 60-16', lat: 37.5383, lng: 126.9990, home: 'https://www.leeumhoam.org', url: 'https://www.leeumhoam.org/leeum/exhibition', render: true },
-  { id: 'mmca-seoul', name: '국립현대미술관 서울', addr: '종로구 삼청로 30', lat: 37.5788, lng: 126.9800, home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '서울관 (덕수궁·과천·청주 제외)' },
-  { id: 'mmca-deoksu', name: '국립현대미술관 덕수궁', addr: '중구 세종대로 99', lat: 37.5659, lng: 126.9751, home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '덕수궁관만' },
+  { id: 'mmca-seoul', name: '국립현대미술관 서울', addr: '종로구 삼청로 30', lat: 37.5788, lng: 126.9800, home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '서울관 (덕수궁·과천·청주 제외)', render: true },
+  { id: 'mmca-deoksu', name: '국립현대미술관 덕수궁', addr: '중구 세종대로 99', lat: 37.5659, lng: 126.9751, home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '덕수궁관만', render: true },
   { id: 'sema', name: '서울시립미술관 서소문본관', addr: '중구 덕수궁길 61', lat: 37.5640, lng: 126.9737, home: 'https://sema.seoul.go.kr', url: 'https://sema.seoul.go.kr/kr/whatson/exhibition/list', branch: '서소문본관만' },
   { id: 'apma', name: '아모레퍼시픽미술관', addr: '용산구 한강대로 100', lat: 37.5292, lng: 126.9683, home: 'https://apma.amorepacific.com', url: 'https://apma.amorepacific.com/contents/exhibition/index.do' },
   { id: 'daelim', name: '대림미술관', addr: '종로구 자하문로4길 21', lat: 37.5769, lng: 126.9734, home: 'https://www.daelimmuseum.org', url: 'https://www.daelimmuseum.org', branch: '대림미술관만 (디뮤지엄 제외)' },

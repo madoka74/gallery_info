@@ -10,6 +10,8 @@ export const CRAWL_KEY = 'crawl:v1';
 const UA = 'Mozilla/5.0 (compatible; GakkaunJeonsiBot/1.0; exhibition listings, once a day)';
 const RECHECK_MS = 20 * 3600e3;   // 하루에 한 번
 const MAX_TEXT = 60000;           // Gemini에 넘기는 텍스트 상한 (글자)
+const DETAIL_MAX = 6;             // 목록에 기간이 없을 때 열어 볼 상세 페이지 수
+const EXTRACT_VER = 2;            // 추출 방식이 바뀌면 올림 → 페이지가 그대로여도 다시 추출
 
 /* ---------- 배치 실행 ---------- */
 export async function crawlBatch(env, opts = {}) {
@@ -35,7 +37,7 @@ export async function crawlBatch(env, opts = {}) {
       state[src.id] = { ...prev, checkedAt: Date.now(), ok: false, error: String(e.message || e).slice(0, 300) };
     }
     const s = state[src.id];
-    report.push({ id: src.id, name: src.name, ok: s.ok, count: (s.items || []).length, via: s.via, changed: s.changed, url: s.url, error: s.error });
+    report.push({ id: src.id, name: src.name, ok: s.ok, count: (s.items || []).length, detailPages: s.pending || 0, via: s.via, changed: s.changed, url: s.url, error: s.error });
   }
   await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
   return report;
@@ -75,27 +77,34 @@ async function crawlOne(env, src, prev, force) {
   if (!page.ok) throw new Error(page.error);
 
   const hash = await sha1(page.text);
-  if (!force && prev.hash === hash && prev.items) return { ...prev, url, via: page.via, changed: false };
+  if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items) return { ...prev, url, via: page.via, changed: false };
 
-  let items = await extract(env, src, page.text, url);
+  let r = await extract(env, src, page.text, url);
 
-  // 결과가 0개인데 페이지가 거의 비어 있으면(자바스크립트로 그리는 사이트) 브라우저로 다시
-  if (!items.length && page.via === 'html' && canRender(env) && page.text.length < 4000) {
+  // 아무것도 못 찾았으면 자바스크립트로 목록을 그리는 사이트일 수 있으니 브라우저로 다시
+  if (!r.items.length && !r.pending.length && page.via === 'html' && canRender(env)) {
     const p2 = await getPage(env, { ...src, render: true }, url);
-    if (p2.ok) { page = p2; items = await extract(env, src, page.text, url); }
+    if (p2.ok && p2.via === 'render') { page = p2; r = await extract(env, src, page.text, url); }
   }
-  // 그래도 0개고 첫 수집이면 홈에서 전시 페이지를 찾아 한 번 더
-  if (!items.length && !prev.items && src.home) {
+  // 그래도 없으면 홈에서 전시 페이지를 찾아 한 번 더
+  if (!r.items.length && !r.pending.length && src.home) {
     const found = await discover(env, src, url);
     if (found && found !== url) {
       const p3 = await getPage(env, src, found);
       if (p3.ok) {
-        const more = await extract(env, src, p3.text, found);
-        if (more.length) { url = found; page = p3; items = more; }
+        const r3 = await extract(env, src, p3.text, found);
+        if (r3.items.length || r3.pending.length) { url = found; page = p3; r = r3; }
       }
     }
   }
-  return { url, hash: await sha1(page.text), items, via: page.via, changed: true };
+  // 목록에 기간이 없는 전시는 상세 페이지를 열어서 기간·포스터를 채움
+  let items = r.items;
+  if (r.pending.length) {
+    const more = await extractDetails(env, src, r.pending.slice(0, DETAIL_MAX));
+    const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
+    items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
+  }
+  return { url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true };
 }
 
 /* ---------- 페이지 받기 ---------- */
@@ -223,34 +232,61 @@ const SCHEMA = {
           title: { type: 'STRING', description: '전시 제목' },
           subtitle: { type: 'STRING', description: '부제. 없으면 빈 문자열' },
           artists: { type: 'STRING', description: '참여 작가. 쉼표로 구분, 없으면 빈 문자열' },
-          start: { type: 'STRING', description: '시작일 YYYY-MM-DD' },
-          end: { type: 'STRING', description: '종료일 YYYY-MM-DD' },
+          start: { type: 'STRING', description: '시작일 YYYY-MM-DD. 페이지에 기간이 없으면 빈 문자열' },
+          end: { type: 'STRING', description: '종료일 YYYY-MM-DD. 페이지에 기간이 없으면 빈 문자열' },
           poster: { type: 'STRING', description: '이 전시의 대표 이미지 URL. 텍스트의 [IMG ...]에 있는 주소 그대로. 없으면 빈 문자열' },
           link: { type: 'STRING', description: '이 전시 상세 페이지 URL. 텍스트의 [LINK ...]에 있는 주소 그대로. 없으면 빈 문자열' },
           fee: { type: 'STRING', description: '관람료. 없으면 빈 문자열' }
         },
-        required: ['title', 'start', 'end']
+        required: ['title', 'start', 'end', 'link']
       }
     }
   },
   required: ['exhibitions']
 };
 
+const kstToday = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+
 async function extract(env, src, text, url) {
-  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const today = kstToday();
   const prompt = `다음은 전시공간 "${src.name}"(${src.addr})의 웹페이지(${url})에서 뽑은 텍스트다.
 오늘은 ${today}이다.
 
 규칙:
 - 이 공간에서 지금 진행 중이거나 앞으로 열릴 전시만 뽑아라. 이미 끝난 전시, 지난 전시 아카이브, 뉴스, 이벤트, 교육 프로그램, 공연은 제외.
-${src.branch ? `- 이 페이지에는 여러 지점·도시의 전시가 섞여 있을 수 있다. "${src.branch}"에 해당하는 전시만 포함하고 나머지는 제외.\n` : ''}- 날짜는 YYYY-MM-DD로. 연도가 없으면 오늘 기준으로 가장 자연스러운 연도를 쓴다. 기간을 알 수 없는 전시는 제외.
+${src.branch ? `- 이 페이지에는 여러 지점·도시의 전시가 섞여 있을 수 있다. "${src.branch}"에 해당하는 전시만 포함하고 나머지는 제외.\n` : ''}- 날짜는 YYYY-MM-DD로. 연도가 없으면 오늘 기준으로 가장 자연스러운 연도를 쓴다.
+- 현재 전시 목록인데 기간이 페이지에 안 적혀 있으면 start·end를 빈 문자열로 두고, 그 전시의 상세 페이지 link는 반드시 채운다.
 - poster와 link는 텍스트 안의 [IMG 주소], [LINK 주소]에 실제로 있는 주소만 그대로 쓰고, 지어내지 마라. 확실하지 않으면 빈 문자열.
 - 제목·작가 이름은 페이지에 적힌 그대로. 한국어와 영어가 같이 있으면 한국어를 우선.
 - 해당하는 전시가 없으면 빈 배열.
 
 ----- 페이지 텍스트 -----
 ${text}`;
+  return clean(await gemini(env, prompt), text, today);
+}
 
+// 상세 페이지 여러 개를 한 번에 넘겨 기간·포스터를 뽑음
+async function extractDetails(env, src, pending) {
+  const parts = [];
+  for (const p of pending) {
+    const pg = await getPage(env, { ...src, render: false }, p.link); // 상세 페이지는 대개 정적이라 일반 요청으로
+    if (pg.ok) parts.push(`===== 상세 페이지: ${p.link} (목록의 제목: ${p.title}) =====\n${pg.text.slice(0, 12000)}`);
+  }
+  if (!parts.length) return [];
+  const today = kstToday();
+  const text = parts.join('\n\n');
+  const prompt = `다음은 전시공간 "${src.name}"(${src.addr})의 전시 상세 페이지 ${parts.length}개에서 뽑은 텍스트다. 오늘은 ${today}이다.
+
+규칙:
+- 각 상세 페이지마다 그 페이지가 소개하는 전시 하나를 뽑는다. link는 그 상세 페이지 주소를 그대로 쓴다.
+- 이미 끝난 전시, 기간을 끝내 알 수 없는 전시는 제외.
+${src.branch ? `- "${src.branch}"에 해당하지 않는 전시는 제외.\n` : ''}- 날짜는 YYYY-MM-DD. poster는 텍스트의 [IMG 주소] 중 그 전시 대표 이미지로 보이는 것만, 지어내지 마라.
+
+${text}`;
+  return clean(await gemini(env, prompt), text + pending.map(p => p.link).join(' '), today).items;
+}
+
+async function gemini(env, prompt) {
   const model = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
@@ -265,19 +301,27 @@ ${text}`;
   const out = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
   let parsed;
   try { parsed = JSON.parse(out); } catch { throw new Error('Gemini 응답이 JSON이 아닙니다: ' + out.slice(0, 120)); }
-  return clean(parsed.exhibitions || [], text, today);
+  return parsed.exhibitions || [];
 }
 
 // 모델 출력 검증: 날짜 형식, 끝난 전시 제거, 텍스트에 없는 URL 제거, 같은 제목 중복 제거
 export function clean(list, text, today) {
-  const seen = new Set(), out = [];
+  const seen = new Set(), out = [], pending = [];
+  const inText = u => u && /^https?:\/\//.test(u) && text.includes(u) ? u.replace(/^http:\/\//, 'https://') : '';
   for (const x of list) {
     const title = String(x.title || '').trim();
     const start = normDate(x.start), end = normDate(x.end);
-    if (!title || !start || !end || end < today || end < start) continue;
+    if (!title) continue;
     const key = title.replace(/\s+/g, '').toLowerCase();
-    if (seen.has(key)) continue; seen.add(key);
-    const inText = u => u && /^https?:\/\//.test(u) && text.includes(u) ? u.replace(/^http:\/\//, 'https://') : '';
+    if (seen.has(key)) continue;
+    if (!start || !end) {
+      // 기간 없음: 상세 페이지 주소가 확실하면 나중에 열어 봄 (원래 주소 그대로 사용)
+      const raw = String(x.link || '').trim();
+      if (raw && /^https?:\/\//.test(raw) && text.includes(raw)) { seen.add(key); pending.push({ title, link: raw }); }
+      continue;
+    }
+    if (end < today || end < start) continue;
+    seen.add(key);
     out.push({
       id: 'w' + hashStr(title + start),
       title, sub: String(x.subtitle || '').trim(), artist: String(x.artists || '').trim(),
@@ -285,7 +329,7 @@ export function clean(list, text, today) {
       poster: inText(String(x.poster || '').trim()), link: inText(String(x.link || '').trim())
     });
   }
-  return out;
+  return { items: out, pending };
 }
 function normDate(v) { const d = String(v || '').replace(/[^\d]/g, ''); return d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : ''; }
 function hashStr(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
