@@ -52,7 +52,6 @@ export const SOURCES = [
   { id: 'lehmann', name: '리만머핀 서울', addr: '용산구 이태원로 213', lat: 37.5367, lng: 126.9960, home: 'https://www.lehmannmaupin.com', url: 'https://www.lehmannmaupin.com/exhibitions', branch: 'Seoul' },
   { id: 'baton', name: '갤러리바톤', addr: '용산구 독서당로 116', lat: 37.5369, lng: 127.0070, home: 'https://www.gallerybaton.com', url: 'https://www.gallerybaton.com' },
   { id: 'johyun', name: '조현화랑 서울', addr: '용산구 한남동', lat: 37.5340, lng: 127.0050, home: 'https://johyungallery.com', url: 'https://johyungallery.com', branch: '서울 (부산 제외)' },
-  { id: 'oneandj', name: '원앤제이갤러리', addr: '용산구 한남동', lat: 37.5385, lng: 126.9988, home: 'https://www.oneandj.com', url: 'https://www.oneandj.com' },
   { id: 'parkryusook', name: '박여숙화랑', addr: '용산구 이태원동', lat: 37.5410, lng: 127.0005, home: 'https://www.parkryusookgallery.com', url: 'https://www.parkryusookgallery.com' },
 
   // ---- 갤러리: 청담·신사·성수 ----

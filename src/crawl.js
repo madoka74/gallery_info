@@ -32,14 +32,14 @@ export async function crawlBatch(env, opts = {}) {
   let quotaHit = false;
   for (const src of targets) {
     const prev = state[src.id] || {};
-    if (quotaHit) { report.push({ id: src.id, name: src.name, skipped: 'Gemini 할당량 초과로 다음에 다시' }); continue; }
+    if (quotaHit) { report.push({ id: src.id, name: src.name, skipped: 'Gemini 할당량 초과·과부하로 다음에 다시' }); continue; }
     try {
       const r = await crawlOne(env, src, prev, opts.force);
       state[src.id] = { ...r, checkedAt: Date.now(), nextAt: Date.now() + RECHECK_MS, ok: true, error: '' };
     } catch (e) {
       const msg = String(e.message || e).slice(0, 300);
       const transient = isTransient(msg);
-      if (/^Gemini 429/.test(msg)) quotaHit = true;
+      if (/^Gemini (429|5\d\d)/.test(msg)) quotaHit = true; // 할당량 초과·서버 과부하면 이번 묶음은 멈춤
       // 실패해도 지난번 결과는 유지. 일시적 실패는 1시간 뒤, 나머지는 하루 뒤 다시
       state[src.id] = { ...prev, checkedAt: Date.now(), nextAt: Date.now() + (transient ? RETRY_MS : RECHECK_MS), ok: false, error: msg, transient };
     }
@@ -401,7 +401,7 @@ async function gemini(env, prompt) {
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   lastGemini = Date.now();
   const model = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  const call = () => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify({
@@ -409,6 +409,9 @@ async function gemini(env, prompt) {
       generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: SCHEMA }
     })
   });
+  let res = await call();
+  // 503(과부하)·500은 잠깐 쉬고 한 번만 다시
+  if (res.status >= 500) { await new Promise(r => setTimeout(r, 8000)); res = await call(); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${data.error?.message || ''}`.slice(0, 300));
   const out = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
