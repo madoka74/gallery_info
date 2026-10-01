@@ -9,6 +9,7 @@
 export const SOURCES = [
   // ---- 미술관 ----
   { id: 'leeum', name: '리움미술관', addr: '용산구 이태원로55길 60-16', lat: 37.5383, lng: 126.9990, home: 'https://www.leeumhoam.org', url: 'https://www.leeumhoam.org/leeum/exhibition', render: true, aliases: ['삼성미술관 리움','삼성미술관 Leeum','리움','Leeum'] },
+  { id: 'hoam', name: '호암미술관', addr: '경기 용인시 처인구 포곡읍 에버랜드로562번길 38', lat: 37.2936, lng: 127.2003, home: 'https://www.leeumhoam.org', url: 'https://www.leeumhoam.org/hoam/exhibition', render: true, aliases: ['삼성 호암미술관','Hoam Museum of Art','호암'] },
   { id: 'mmca-seoul', name: '국립현대미술관 서울', addr: '종로구 삼청로 30', lat: 37.5788, lng: 126.9800, home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '서울관 (덕수궁·과천·청주 제외)', render: true, aliases: ['국립현대미술관','국립현대미술관 서울관','MMCA 서울'] },
   { id: 'mmca-deoksu', name: '국립현대미술관 덕수궁', addr: '중구 세종대로 99', lat: 37.5659, lng: 126.9751, home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '덕수궁관만', render: true, aliases: ['국립현대미술관 덕수궁관','MMCA 덕수궁'] },
   { id: 'sema', name: '서울시립미술관 서소문본관', addr: '중구 덕수궁길 61', lat: 37.5640, lng: 126.9737, home: 'https://sema.seoul.go.kr', url: 'https://sema.seoul.go.kr/kr/whatson/exhibition/list', branch: '서소문본관만', aliases: ['서울시립미술관','서울시립미술관 본관','서소문본관','SeMA'] },
