@@ -623,7 +623,9 @@ document.addEventListener('click',ev=>{
 document.addEventListener('change',ev=>{
   const t=ev.target;if(!t.dataset||!t.dataset.on)return;
   const v=venueById(t.dataset.on);if(!v)return;setPref(v,{on:t.checked});near.dirty=true;
-  renderVList();updateTop();const sw=document.getElementById('on-'+t.dataset.on);if(sw)sw.focus({preventScroll:false});
+  // 목록은 다시 그리되 보던 위치는 그대로 (꺼진 항목이 아래로 내려가도 화면이 따라가지 않게)
+  const page=$('#view-settings'),top=page.scrollTop;
+  renderVList();updateTop();page.scrollTop=top;
 });
 document.addEventListener('input',ev=>{if(ev.target.id==='vq')renderVList()});
 document.addEventListener('submit',ev=>{if(ev.target.id==='locform'){ev.preventDefault();const q=($('#locq').value||'').trim();if(q)searchPlace(q)}});
