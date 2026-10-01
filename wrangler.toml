@@ -2,6 +2,7 @@ name = "gakkaun-jeonsi"
 main = "src/index.js"
 # 2024-09-02 이후 날짜면 서울 API의 8088 포트로 그대로 요청이 나갑니다 (allow_custom_ports 기본값)
 compatibility_date = "2026-09-01"
+keep_vars = true
 
 # public/ 폴더의 화면(index.html)을 같은 주소에서 함께 제공
 [assets]
