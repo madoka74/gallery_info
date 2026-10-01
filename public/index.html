@@ -202,9 +202,14 @@ const ORIGINS = {
 
 /* ---------- 상태 (이 브라우저에 저장) ---------- */
 const KEY='gakkaun-jeonsi-v2';
-const defaults = () => ({ origin:'gangnam', gps:null, scope:'all', sort:'distance', venues:[], hidden:[], stars:[] });
+// prefs: 공간별 내 설정 {heart, on, v:{공간 스냅샷}} · order: 직접 정렬 순서 · hidden: 숨긴 공간
+const defaults = () => ({ origin:'gangnam', gps:null, sort:'distance', prefs:{}, order:[], hidden:[], stars:[] });
 let S; try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
-if(!S||!Array.isArray(S.venues)) S=defaults();
+if(S&&Array.isArray(S.venues)){ // 이전 저장 형식에서 옮기기
+  const prefs={}; S.venues.forEach(v=>{prefs[v.id]={heart:!!v.heart,on:v.on!==false,v:{id:v.id,name:v.name,addr:v.addr||'',lat:v.lat,lng:v.lng}}});
+  S={...defaults(),origin:S.origin||'gangnam',gps:S.gps||null,sort:S.sort||'distance',prefs,order:S.venues.map(v=>v.id),hidden:S.hidden||[],stars:S.stars||[]};
+}
+if(!S||typeof S.prefs!=='object') S=defaults();
 const save = () => { try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} };
 
 /* ---------- 도우미 ---------- */
@@ -239,7 +244,9 @@ function dist(v){
 }
 const fmtDist=m=>m<1000?`${Math.max(10,Math.round(m/10)*10)}m`:`${(m/1000).toFixed(1)}km`;
 const walkTxt=m=>{const min=Math.max(1,Math.round(m*1.25/75));return min<=40?`도보 ${min}분`:`대중교통 ${Math.max(10,Math.round(m/1000*3.2+8))}분`};
-const inList=id=>S.venues.find(v=>v.id===id);
+const isHeart=id=>!!(S.prefs[id]&&S.prefs[id].heart);
+const isOn=id=>!(S.prefs[id]&&S.prefs[id].on===false);
+function setPref(v,patch){const p=S.prefs[v.id]||(S.prefs[v.id]={heart:false,on:true});Object.assign(p,patch);p.v=slim(v);save();return p}
 const isHidden=id=>S.hidden.some(h=>h.id===id);
 const slim=v=>({id:v.id,name:v.name,addr:v.addr||'',lat:v.lat,lng:v.lng});
 
@@ -314,8 +321,8 @@ const observePosters=root=>root.querySelectorAll('img[data-poster]:not([data-don
 const EX=new Map(); // 전시 id → {e, v}
 function remember(e,v){EX.set(e.id,{e,v:slim(v)})}
 function cardHTML(e,v,meta={}){
-  const st=status(e),d=dist(v),lv=inList(v.id);
-  const starred=S.stars.some(s=>s.e.id===e.id),hearted=!!(lv&&lv.heart);
+  const st=status(e),d=dist(v);
+  const starred=S.stars.some(s=>s.e.id===e.id),hearted=isHeart(v.id);
   return `<article class="card" data-ex="${esc(e.id)}">
     <div class="poster">
       <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}"></div>
@@ -342,21 +349,25 @@ function venueCards(venues,startRank,withRank){
   venues.forEach((v,i)=>{v.ex.forEach((e,j)=>{remember(e,v);html+=cardHTML(e,v,{rank:withRank?startRank+i+1:0,idx:j+1,total:v.ex.length})})});
   return html;
 }
-// 피드에서 만난 공간은 설정 목록에 자동 등록 (숨긴 공간 제외)
-function register(venues){
-  let changed=false;
-  venues.forEach(v=>{const cur=inList(v.id);if(cur){Object.assign(cur,slim(v));}else if(!isHidden(v.id)){S.venues.push({...slim(v),heart:false,on:true});changed=true}});
-  if(changed)save();
+// 하트한 공간 이름·좌표 스냅샷을 최신으로 유지
+function register(venues){let ch=false;venues.forEach(v=>{const p=S.prefs[v.id];if(p){p.v=slim(v);ch=true}});if(ch)save()}
+
+/* ---------- 전체 공간 목록 (서버) ---------- */
+let allVenues=null,allKey='';
+async function loadAll(force){
+  const o=origin(),k=o.lat+','+o.lng;
+  if(allVenues&&allKey===k&&!force)return allVenues;
+  const r=await api(`/api/allvenues?lat=${o.lat}&lng=${o.lng}`);
+  allVenues=r.venues;allKey=k;register(allVenues);
+  return allVenues;
 }
 
 /* ---------- 근처 피드: 서버에서 공간 10곳씩 ---------- */
 const near={el:$('#view-near'),page:0,hasMore:true,loading:false,total:0,shown:0,sentinel:null,dirty:true,error:null};
 const nearIO=new IntersectionObserver(ents=>{if(ents.some(en=>en.isIntersecting))loadMore()},{root:near.el,rootMargin:'0px 0px 150% 0px'});
 function feedQuery(){
-  const off=S.venues.filter(v=>!v.on).map(v=>v.id);
-  return S.scope==='list'
-    ? {only:S.venues.filter(v=>v.on).map(v=>v.id),exclude:S.hidden.map(h=>h.id)}
-    : {exclude:[...S.hidden.map(h=>h.id),...off]};
+  const off=Object.keys(S.prefs).filter(id=>!isOn(id));
+  return {exclude:[...S.hidden.map(h=>h.id),...off]};
 }
 function resetNear(){
   near.dirty=false;near.page=0;near.hasMore=true;near.loading=false;near.total=0;near.shown=0;near.error=null;
@@ -373,9 +384,7 @@ async function loadMore(){
     const res=await api('/api/feed',{page:near.page,...feedQuery()});
     near.page++;near.hasMore=res.hasMore;near.total=res.total;
     if(!res.venues.length&&near.page===1){
-      near.el.innerHTML=S.scope==='list'
-        ?`<div class="empty"><h3>목록에 있는 공간에 열린 전시가 없어요</h3><p>설정에서 근처 검색 범위를 ‘전체 공간’으로 바꾸거나 공간을 추가해 보세요.</p><button class="btn" data-goto="settings">설정 열기</button></div>`
-        :`<div class="empty"><h3>근처에 열린 전시가 없어요</h3><p>기준 위치를 바꾸거나, 꺼 둔 공간을 다시 켜 보세요.</p><button class="btn" data-goto="settings">설정 열기</button></div>`;
+      near.el.innerHTML=`<div class="empty"><h3>근처에 열린 전시가 없어요</h3><p>기준 위치를 바꾸거나, 꺼 둔 공간을 다시 켜 보세요.</p><button class="btn" data-goto="settings">설정 열기</button></div>`;
       updateTop();return;
     }
     register(res.venues);
@@ -393,16 +402,22 @@ async function loadMore(){
 }
 
 /* ---------- 하트 피드 ---------- */
-function settingsOrder(){
-  const list=S.venues.slice();
-  if(S.sort==='distance')list.sort((a,b)=>dist(a)-dist(b));
-  else if(S.sort==='name')list.sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+// 설정 목록 = 서버의 전체 공간 (숨긴 곳 제외) + 지금 전시가 없는 하트 공간
+function settingsList(){
+  const list=(allVenues||[]).filter(v=>!isHidden(v.id)).map(v=>({...v,active:v.active}));
+  const have=new Set(list.map(v=>v.id));
+  Object.entries(S.prefs).forEach(([id,p])=>{if(p.heart&&!have.has(id)&&p.v&&!isHidden(id))list.push({...p.v,active:0})});
+  if(S.sort==='name')list.sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  else if(S.sort==='custom'){const idx=new Map(S.order.map((id,i)=>[id,i]));list.sort((a,b)=>(idx.has(a.id)?idx.get(a.id):1e6+dist(a))-(idx.has(b.id)?idx.get(b.id):1e6+dist(b)))}
+  else list.sort((a,b)=>dist(a)-dist(b));
   return list;
 }
 let heartInfo={venues:0,count:0},heartSeq=0;
 async function renderHearts(){
   const el=$('#view-heart'),seq=++heartSeq;
-  const hv=settingsOrder().filter(v=>v.heart);
+  try{await loadAll()}catch(e){}
+  if(seq!==heartSeq)return;
+  const hv=settingsList().filter(v=>isHeart(v.id));
   heartInfo={venues:hv.length,count:0};updateTop();
   if(!hv.length){el.innerHTML=`<div class="empty"><h3>하트한 공간이 없어요</h3><p>카드의 장소 옆 하트나 설정의 공간 목록에서 좋아하는 전시공간을 표시하면 여기에 모입니다.</p><button class="btn" data-goto="settings">공간 고르기</button></div>`;return}
   el.innerHTML=`<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span>하트 공간 ${hv.length}곳의 전시를 불러오는 중</span></div>`;
@@ -442,7 +457,7 @@ function renderMy(){
 /* ---------- 설정 ---------- */
 let statusCache=null;
 function renderSettings(){
-  const el=$('#view-settings'),q=$('#addq')?.value||'',list=settingsOrder();
+  const el=$('#view-settings');
   el.innerHTML=`
   <section class="sec">
     <h3>기준 위치</h3>
@@ -450,66 +465,43 @@ function renderSettings(){
     <p class="note">${S.origin==='gps'?'마지막으로 받은 기기 위치를 씁니다. ‘내 위치’를 다시 누르면 새로 받아요.':'역을 기준점으로 씁니다. ‘내 위치’를 누르면 기기 위치를 씁니다.'}</p>
   </section>
   <section class="sec">
-    <h3>근처 검색 범위</h3>
-    <div class="seg" role="group" aria-label="검색 범위">
-      <button data-scope="all" aria-pressed="${S.scope==='all'}">전체 공간</button>
-      <button data-scope="list" aria-pressed="${S.scope==='list'}">내 목록만</button>
-    </div>
-    <p class="note">${S.scope==='all'?'API에 있는 모든 공간을 거리순으로 봅니다. 스위치를 끈 공간과 숨긴 공간은 빠집니다.':'아래 목록에서 스위치가 켜진 공간만 봅니다.'}</p>
-  </section>
-  <section class="sec">
-    <h3>전시공간 <span class="mono">${S.venues.length}</span></h3>
+    <h3>전시공간 <span class="mono" id="vcount">…</span></h3>
     <div class="seg" role="group" aria-label="정렬">
       <button data-sort="distance" aria-pressed="${S.sort==='distance'}">거리순</button>
       <button data-sort="name" aria-pressed="${S.sort==='name'}">이름순</button>
       <button data-sort="custom" aria-pressed="${S.sort==='custom'}">직접 정렬</button>
     </div>
-    <p class="note">근처 피드에서 본 공간이 자동으로 쌓입니다. 하트 탭은 이 순서를 따릅니다. ×는 목록에서 빼고 피드에서도 숨깁니다.</p>
-    ${list.length?`<ul class="vlist">${list.map((v,i)=>`
-      <li class="vrow${v.on?'':' off'}">
-        <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${v.heart}" aria-label="${esc(v.name)} 하트">${ICON.heart}</button>
-        <div class="vtext"><strong>${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span>${v.addr?` · ${esc(v.addr)}`:''}</small></div>
-        <label class="switch"><input type="checkbox" id="on-${esc(v.id)}" data-on="${esc(v.id)}" ${v.on?'checked':''}><span class="track"></span><span class="sr">${esc(v.name)} 근처 검색에 포함</span></label>
-        ${S.sort==='custom'?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===list.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
-        <button class="del" data-del="${esc(v.id)}" aria-label="${esc(v.name)} 목록에서 빼기">${ICON.x}</button>
-      </li>`).join('')}</ul>`:`<p class="note">아직 등록된 공간이 없어요. 근처 탭을 둘러보거나 아래에서 검색해 추가하세요.</p>`}
-  </section>
-  <section class="sec">
-    <h3>공간 추가</h3>
-    <input class="field" id="addq" type="search" placeholder="공간 이름이나 구 이름 (예: 시립, 강남구)" autocomplete="off" value="${esc(q)}">
-    <ul class="alist" id="alist"></ul>
+    <input class="field" id="vq" type="search" placeholder="목록에서 찾기 (이름이나 구 이름)" autocomplete="off">
+    <p class="note">지금 전시가 열려 있는 모든 공간입니다. 스위치를 끄면 근처 피드에서 빠지고, ×는 목록에서 숨깁니다. 하트 탭은 이 순서를 따릅니다.</p>
+    <ul class="vlist" id="vlist"><li class="note">공간 목록을 불러오는 중…</li></ul>
   </section>
   ${S.hidden.length?`<section class="sec"><h3>숨긴 공간 <span class="mono">${S.hidden.length}</span></h3><ul class="alist">${S.hidden.map(h=>`<li class="arow"><div class="vtext"><strong>${esc(h.name)}</strong></div><button class="btn ghost" data-unhide="${esc(h.id)}">다시 보기</button></li>`).join('')}</ul></section>`:''}
   <section class="sec">
     <h3>데이터</h3>
     <p class="note" id="dstatus">${statusCache?statusText(statusCache):'상태 확인 중…'}</p>
-    <p class="note">출처: 한국문화정보원 문화포털, 서울특별시 서울 열린데이터광장 (공공누리 제1유형)</p>
+    <p class="note">출처: 한국문화정보원 문화포털, 서울특별시 서울 열린데이터광장 (공공누리 제1유형), 각 전시공간 공식 홈페이지</p>
     <div><button class="btn ghost danger" data-reset>내 설정 초기화</button></div>
   </section>`;
-  renderAdd();
+  loadAll().then(renderVList).catch(err=>{const b=$('#vlist');if(b)b.innerHTML=`<li class="note">${esc(err.message)}</li>`});
   if(!statusCache)api('/api/status').then(s=>{statusCache=s;const p=$('#dstatus');if(p)p.textContent=statusText(s)}).catch(err=>{const p=$('#dstatus');if(p)p.textContent='서버 상태를 확인하지 못했어요: '+err.message});
 }
-function statusText(s){const t=new Date(s.updatedAt);return `마지막 갱신 ${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())} · 공간 ${s.venues}곳 · 전시 ${s.exhibitions}개`}
-let addT,addSeq=0;
-function renderAdd(){
-  const box=$('#alist');if(!box)return;
-  const q=($('#addq').value||'').trim();
-  if(!q){box.innerHTML='<li class="note">두 글자 이상 입력하면 API에 있는 공간을 찾아요.</li>';return}
-  if(q.length<2)return;
-  clearTimeout(addT);
-  addT=setTimeout(async()=>{
-    const seq=++addSeq;box.innerHTML='<li class="note">찾는 중…</li>';
-    try{
-      const res=await api('/api/search?q='+encodeURIComponent(q)+`&lat=${origin().lat}&lng=${origin().lng}`);
-      if(seq!==addSeq)return;
-      res.venues.forEach(v=>v.ex.forEach(e=>remember(e,v)));
-      searchCache=new Map(res.venues.map(v=>[v.id,v]));
-      box.innerHTML=res.venues.length?res.venues.map(v=>`<li class="arow"><div class="vtext"><strong>${esc(v.name)}</strong><small><span class="mono">${fmtDist(v.distance)}</span> · 열린 전시 ${v.ex.length}개${v.addr?` · ${esc(v.addr)}`:''}</small></div>${inList(v.id)?'<span class="note">목록에 있음</span>':`<button class="btn" data-add="${esc(v.id)}">추가</button>`}</li>`).join('')
-        :`<li class="note">‘${esc(q)}’에 맞는 공간이 없어요. 공공 API에 등록되지 않은 공간일 수 있어요.</li>`;
-    }catch(err){if(seq===addSeq)box.innerHTML=`<li class="note">${esc(err.message)}</li>`}
-  },300);
+function renderVList(){
+  const box=$('#vlist');if(!box)return;
+  const all=settingsList(),q=(($('#vq')||{}).value||'').trim();
+  const list=q?all.filter(v=>v.name.includes(q)||(v.addr||'').includes(q)):all;
+  const c=$('#vcount');if(c)c.textContent=all.length;
+  const custom=S.sort==='custom'&&!q;
+  box.innerHTML=list.length?list.map((v,i)=>{const on=isOn(v.id);return `
+    <li class="vrow${on?'':' off'}">
+      <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${isHeart(v.id)}" aria-label="${esc(v.name)} 하트">${ICON.heart}</button>
+      <div class="vtext"><strong>${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span> · ${v.active?`전시 ${v.active}개`:'지금 전시 없음'}${v.addr?` · ${esc(v.addr)}`:''}</small></div>
+      <label class="switch"><input type="checkbox" id="on-${esc(v.id)}" data-on="${esc(v.id)}" ${on?'checked':''}><span class="track"></span><span class="sr">${esc(v.name)} 근처 피드에 포함</span></label>
+      ${custom?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===list.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
+      <button class="del" data-del="${esc(v.id)}" aria-label="${esc(v.name)} 숨기기">${ICON.x}</button>
+    </li>`}).join(''):`<li class="note">‘${esc(q)}’에 맞는 공간이 없어요.</li>`;
 }
-let searchCache=new Map();
+function statusText(s){const t=new Date(s.updatedAt);return `마지막 갱신 ${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())} · 공간 ${s.venues}곳 · 전시 ${s.exhibitions}개`}
+const venueById=id=>(allVenues||[]).find(v=>v.id===id)||(S.prefs[id]&&S.prefs[id].v)||null;
 
 /* ---------- 상단 · 탭 ---------- */
 let tab='near';
@@ -520,7 +512,7 @@ function updateTop(){
   if(tab==='near')c.innerHTML=`<button data-goto="settings">${ICON.pin}${esc(origin().name)} 기준</button>${near.total?`<span class="mono">${near.shown}/${near.total}곳</span>`:''}`;
   else if(tab==='heart')c.innerHTML=`<span>하트 공간 <span class="mono">${heartInfo.venues}</span>곳 · 전시 <span class="mono">${heartInfo.count}</span></span>`;
   else if(tab==='my')c.innerHTML=`<span>담은 전시 <span class="mono">${S.stars.length}</span></span>`;
-  else c.innerHTML=`<span>공간 <span class="mono">${S.venues.length}</span>곳 · 하트 <span class="mono">${S.venues.filter(v=>v.heart).length}</span></span>`;
+  else c.innerHTML=`<span>공간 <span class="mono">${allVenues?allVenues.length:'…'}</span>곳 · 하트 <span class="mono">${Object.values(S.prefs).filter(p=>p.heart).length}</span></span>`;
 }
 function show(t){
   if(!['near','heart','my','settings'].includes(t))t='near';
@@ -547,14 +539,13 @@ function toggleStar(id){
 }
 function findVenue(id){
   for(const {v} of EX.values())if(v.id===id)return v;
-  return searchCache.get(id)||null;
+  return venueById(id);
 }
 function toggleHeart(id){
-  let s=inList(id);
-  if(!s){const v=findVenue(id);if(!v)return;s={...slim(v),heart:false,on:true};S.venues.push(s);S.hidden=S.hidden.filter(h=>h.id!==id)}
-  s.heart=!s.heart;save();
+  const v=findVenue(id);if(!v)return;
+  const s=setPref(v,{heart:!isHeart(id)});s.name=v.name;
   document.querySelectorAll(`[data-heart="${CSS.escape(id)}"]`).forEach(b=>b.setAttribute('aria-pressed',s.heart));
-  toast(`${s.name} · ${s.heart?'하트 공간으로 표시':'하트 해제'}`);updateTop();
+  toast(`${v.name} · ${s.heart?'하트 공간으로 표시':'하트 해제'}`);updateTop();
 }
 function armed(btn,label,fn){
   if(btn.dataset.armed!==undefined){fn();return}
@@ -572,7 +563,7 @@ function locate(btn){
   if(!navigator.geolocation){toast('이 브라우저는 위치를 지원하지 않아요');return}
   btn.textContent='찾는 중…';
   navigator.geolocation.getCurrentPosition(p=>{
-    S.gps={lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)};S.origin='gps';save();near.dirty=true;renderSettings();updateTop();toast('현재 위치 기준으로 바꿨어요');
+    S.gps={lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)};S.origin='gps';save();near.dirty=true;allVenues=null;renderSettings();updateTop();toast('현재 위치 기준으로 바꿨어요');
   },err=>{renderSettings();toast(err.code===1?'위치 권한이 거부됐어요. 브라우저 설정에서 허용해 주세요':'위치를 받지 못했어요')},{enableHighAccuracy:false,timeout:10000,maximumAge:300000});
 }
 
@@ -582,29 +573,27 @@ document.addEventListener('click',ev=>{
   if(d.tab){show(d.tab);return}
   if(d.goto){show(d.goto);return}
   if(d.star){toggleStar(d.star);return}
-  if(d.heart){toggleHeart(d.heart);if(tab==='settings')renderSettings();return}
+  if(d.heart){toggleHeart(d.heart);updateTop();return}
   if(d.open){openSheet(d.open);return}
   if(d.act==='close'){closeSheet();return}
   if(d.act==='retry'){near.error=null;loadMore();return}
   if(d.act==='retry-heart'){renderHearts();return}
   if(d.act==='gps'){locate(t);return}
-  if(d.origin){S.origin=d.origin;save();near.dirty=true;renderSettings();updateTop();toast(`${origin().name} 기준으로 바꿨어요`);return}
-  if(d.scope){S.scope=d.scope;save();near.dirty=true;renderSettings();return}
+  if(d.origin){S.origin=d.origin;save();near.dirty=true;allVenues=null;renderSettings();updateTop();toast(`${origin().name} 기준으로 바꿨어요`);return}
   if(d.sort){
-    if(d.sort==='custom'&&S.sort!=='custom'){const ord=settingsOrder().map(v=>v.id);S.venues.sort((a,b)=>ord.indexOf(a.id)-ord.indexOf(b.id))}
+    if(d.sort==='custom'&&S.sort!=='custom')S.order=settingsList().map(v=>v.id);
     S.sort=d.sort;save();renderSettings();return;
   }
-  if(d.move){const i=S.venues.findIndex(v=>v.id===d.move),j=i+Number(d.dir);if(j<0||j>=S.venues.length)return;[S.venues[i],S.venues[j]]=[S.venues[j],S.venues[i]];save();renderSettings();$(`[data-move="${CSS.escape(d.move)}"][data-dir="${d.dir}"]`)?.focus();return}
-  if(d.del){armed(t,'숨기기',()=>{const v=inList(d.del);S.venues=S.venues.filter(x=>x.id!==d.del);if(v&&!isHidden(v.id))S.hidden.push({id:v.id,name:v.name});save();near.dirty=true;renderSettings();updateTop();toast(`${v?v.name:'공간'} · 숨김`)});return}
+  if(d.move){S.order=settingsList().map(v=>v.id);const i=S.order.indexOf(d.move),j=i+Number(d.dir);if(i<0||j<0||j>=S.order.length)return;[S.order[i],S.order[j]]=[S.order[j],S.order[i]];save();renderVList();$(`[data-move="${CSS.escape(d.move)}"][data-dir="${d.dir}"]`)?.focus();return}
+  if(d.del){armed(t,'숨기기',()=>{const v=venueById(d.del);if(!isHidden(d.del))S.hidden.push({id:d.del,name:v?v.name:'공간'});save();near.dirty=true;renderSettings();updateTop();toast(`${v?v.name:'공간'} · 숨김`)});return}
   if(d.unhide){S.hidden=S.hidden.filter(h=>h.id!==d.unhide);save();near.dirty=true;renderSettings();toast('다시 피드에 나와요');return}
-  if(d.add){const v=searchCache.get(d.add);if(!v)return;S.hidden=S.hidden.filter(h=>h.id!==v.id);S.venues.push({...slim(v),heart:false,on:true});save();near.dirty=true;renderSettings();updateTop();toast(`${v.name} 추가됨`);return}
   if(d.reset!==undefined){armed(t,'한 번 더 누르면 초기화',()=>{S=defaults();save();near.dirty=true;renderSettings();updateTop();toast('처음 상태로 되돌렸어요')});return}
 });
 document.addEventListener('change',ev=>{
   const t=ev.target;if(!t.dataset||!t.dataset.on)return;
-  const s=inList(t.dataset.on);s.on=t.checked;save();near.dirty=true;t.closest('.vrow').classList.toggle('off',!s.on);
+  const v=venueById(t.dataset.on);if(!v)return;setPref(v,{on:t.checked});near.dirty=true;t.closest('.vrow').classList.toggle('off',!t.checked);
 });
-document.addEventListener('input',ev=>{if(ev.target.id==='addq')renderAdd()});
+document.addEventListener('input',ev=>{if(ev.target.id==='vq')renderVList()});
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!$('#sheet').hidden)closeSheet()});
 
 show((location.hash||'').slice(1)||'near');
