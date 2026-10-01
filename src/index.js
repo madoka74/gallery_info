@@ -2,10 +2,16 @@
 // 두 공공 API(문화포털 공연전시정보, 서울시 문화행사 정보)에서 전시만 모아
 // 전시공간 단위로 묶고 KV에 캐시한 뒤, 앱이 쓰는 /api/* 엔드포인트를 제공합니다.
 //
-// 비밀값 (wrangler secret put):
+// 여기에 전시공간 홈페이지 직접 수집(src/crawl.js, 대상 목록은 src/sources.js)을 더합니다.
+//
+// 비밀값 (Secret):
 //   DATA_GO_KR_KEY  공공데이터포털 일반 인증키 (Decoding 키 권장, Encoding 키도 자동 인식)
 //   SEOUL_KEY       서울 열린데이터광장 인증키
-//   ADMIN_TOKEN     /api/refresh, /api/debug 호출용 임의 문자열
+//   ADMIN_TOKEN     관리용 주소(/api/refresh 등) 비밀번호
+//   GEMINI_API_KEY  홈페이지에서 전시 목록을 뽑는 Gemini 키
+//   CF_ACCOUNT_ID, CF_API_TOKEN  (선택) 자바스크립트로 그려지는 페이지를 읽는 브라우저 렌더링용
+
+import { crawlBatch, crawlItems, crawlStatus } from './crawl.js';
 
 // 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
 // from~to는 '기간이 겹치는' 항목을 돌려줌. 정상 resultCode는 00.
@@ -16,6 +22,8 @@ const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
+const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
+const API_EVERY_MS = 6 * 3600e3;    // 공공 API는 6시간마다
 
 export default {
   async fetch(req, env, ctx) {
@@ -30,8 +38,14 @@ export default {
       return json({ error: err.message || String(err) }, 500);
     }
   },
+  // 매시 정각: 공공 API(6시간마다) + 홈페이지 몇 곳 수집 → 데이터 다시 묶기
   async scheduled(_ev, env, ctx) {
-    ctx.waitUntil(refresh(env));
+    ctx.waitUntil((async () => {
+      const api = await env.CACHE.get(API_KEY, 'json');
+      if (!api || Date.now() - Date.parse(api.at) > API_EVERY_MS) await refreshApis(env).catch(() => {});
+      await crawlBatch(env).catch(() => {});
+      await rebuild(env);
+    })());
   }
 };
 
@@ -41,10 +55,22 @@ async function route(url, req, env, ctx) {
   const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
   const q = k => body[k] ?? url.searchParams.get(k);
 
-  if ((p === '/api/refresh' || p === '/api/debug') && !isAdmin(url, env)) return json({ error: 'token이 맞지 않습니다' }, 403);
+  if (['/api/refresh', '/api/debug', '/api/crawl', '/api/sources'].includes(p) && !isAdmin(url, env)) return json({ error: 'token이 맞지 않습니다' }, 403);
   if (p === '/api/refresh') {
-    const stats = await refresh(env);
+    // 공공 API 다시 받기 + 데이터 다시 묶기 (홈페이지 수집은 /api/crawl)
+    await refreshApis(env);
+    const stats = await rebuild(env);
     return json({ ok: true, stats });
+  }
+  if (p === '/api/crawl') {
+    // ?id=leeum 한 곳만 (force=1이면 페이지가 그대로여도 다시 추출) · id 없으면 다음 묶음
+    const report = await crawlBatch(env, { id: url.searchParams.get('id') || undefined, force: url.searchParams.get('force') === '1' });
+    const stats = await rebuild(env);
+    return json({ ok: true, report, stats });
+  }
+  if (p === '/api/sources') {
+    const list = await crawlStatus(env);
+    return json({ total: list.length, done: list.filter(s => s.ok).length, failed: list.filter(s => s.ok === false).length, pending: list.filter(s => s.ok === null).length, exhibitions: list.reduce((n, s) => n + s.count, 0), sources: list });
   }
   if (p === '/api/debug') {
     return new Response(await debugRaw(url.searchParams.get('src'), env), { headers: { 'content-type': 'text/plain; charset=utf-8', ...cors() } });
@@ -69,6 +95,15 @@ async function route(url, req, env, ctx) {
       .sort((a, b) => a.distance - b.distance);
     const venues = list.slice(page * PAGE_VENUES, (page + 1) * PAGE_VENUES);
     return json({ page, total: list.length, hasMore: (page + 1) * PAGE_VENUES < list.length, venues, updatedAt: ds.updatedAt });
+  }
+
+  if (p === '/api/allvenues') {
+    // 설정 탭용: 지금 열린 전시가 있는 모든 공간 (전시 목록 없이 요약만)
+    const venues = ds.venues
+      .map(v => ({ id: v.id, name: v.name, addr: v.addr, lat: v.lat, lng: v.lng, active: v.ex.filter(e => e.end >= today).length, distance: Math.round(haversine(lat, lng, v.lat, v.lng)) }))
+      .filter(v => v.active)
+      .sort((a, b) => a.distance - b.distance);
+    return json({ venues });
   }
 
   if (p === '/api/venues') {
@@ -101,14 +136,15 @@ async function getDataset(env, ctx) {
   const cached = await env.CACHE.get(DATASET_KEY, 'json');
   if (cached) {
     // 12시간 넘게 갱신이 없으면 백그라운드로 다시 받기 (크론이 실패했을 때 대비)
-    if (Date.now() - Date.parse(cached.updatedAt) > 12 * 3600e3) ctx.waitUntil(refresh(env).catch(() => {}));
+    if (Date.now() - Date.parse(cached.updatedAt) > 12 * 3600e3) ctx.waitUntil(refreshApis(env).then(() => rebuild(env)).catch(() => {}));
     return cached;
   }
-  await refresh(env);
+  if (!(await env.CACHE.get(API_KEY))) await refreshApis(env);
+  await rebuild(env);
   return env.CACHE.get(DATASET_KEY, 'json');
 }
 
-async function refresh(env) {
+async function refreshApis(env) {
   const stats = {};
   const results = await Promise.allSettled([fetchCulture(env, stats), fetchSeoul(env, stats)]);
   const items = [];
@@ -118,9 +154,21 @@ async function refresh(env) {
     else stats[name + 'Error'] = String(r.reason && r.reason.message || r.reason);
   });
   if (!items.length) throw new Error('두 API 모두 전시를 가져오지 못했습니다: ' + JSON.stringify(stats));
-  const venues = buildVenues(items, stats);
-  const ds = { updatedAt: new Date().toISOString(), venues, stats };
-  await env.CACHE.put(DATASET_KEY, JSON.stringify(ds));
+  await env.CACHE.put(API_KEY, JSON.stringify({ at: new Date().toISOString(), items, stats }));
+  return stats;
+}
+
+// 공공 API 결과 + 홈페이지 수집 결과를 합쳐 공간 단위로 묶음
+async function rebuild(env) {
+  const api = (await env.CACHE.get(API_KEY, 'json')) || { items: [], stats: {} };
+  const crawled = await crawlItems(env);
+  const stats = { ...api.stats, apiAt: api.at, crawledExhibitions: crawled.length };
+  const today = kstToday();
+  const all = [...api.items, ...crawled];
+  const active = all.filter(it => it.end >= today);
+  stats.endedDropped = all.length - active.length;
+  const venues = buildVenues(active, stats);
+  await env.CACHE.put(DATASET_KEY, JSON.stringify({ updatedAt: new Date().toISOString(), venues, stats }));
   return stats;
 }
 
@@ -234,8 +282,8 @@ function buildVenues(items, stats) {
     const k = norm(it.title) + '|' + placeKey(it.place);
     const prev = byEx.get(k);
     if (!prev) { byEx.set(k, it); continue; }
-    const keep = prev.src === 'seoul' ? prev : it, other = keep === prev ? it : prev;
-    keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee;
+    const keep = rank(prev) >= rank(it) ? prev : it, other = keep === prev ? it : prev;
+    keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee; keep.artist ||= other.artist;
     byEx.set(k, keep);
   }
   // 2) 공간 키로 묶기
@@ -274,14 +322,17 @@ function buildVenues(items, stats) {
   return venues;
 }
 
+// 같은 전시가 여러 출처에 있으면: 홈페이지 수집 > 서울시 > 문화포털 순으로 대표를 고름
+const rank = it => ({ crawl: 3, seoul: 2, culture: 1 })[it.src] || 0;
+
 // 공간을 합친 뒤에도 같은 제목이 남으면 하나로 (서울 데이터 우선, 빈 칸은 서로 채움)
 function dedupeTitles(list) {
   const m = new Map();
   for (const it of list) {
     const k = norm(it.title), prev = m.get(k);
     if (!prev) { m.set(k, it); continue; }
-    const keep = prev.src === 'seoul' ? prev : it, other = keep === prev ? it : prev;
-    keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee; keep.artist ||= other.artist;
+    const keep = rank(prev) >= rank(it) ? prev : it, other = keep === prev ? it : prev;
+    keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee; keep.artist ||= other.artist; keep.sub ||= other.sub;
     m.set(k, keep);
   }
   return [...m.values()];
@@ -358,4 +409,4 @@ function tag(xml, names) {
 }
 
 // 테스트용 내보내기
-export const _test = { parseCulture, parseSeoul, buildVenues, placeName, fixLatLng, blockList, ymd };
+export const _test = { rebuild, parseCulture, parseSeoul, buildVenues, placeName, fixLatLng, blockList, ymd };
