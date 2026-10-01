@@ -362,7 +362,7 @@ function pump(){
 function ensurePoster(img){
   if(img.dataset.done)return;img.dataset.done='1';
   const rec=EX.get(img.dataset.poster);if(!rec)return;
-  if(rec.e.poster){ img.onerror=()=>{img.onerror=null;img.removeAttribute('src');generate(img)}; img.referrerPolicy='no-referrer'; img.src=rec.e.poster; }
+  if(rec.e.poster){ img.onerror=()=>{img.onerror=null;img.removeAttribute('src');generate(img)}; img.referrerPolicy='no-referrer'; img.src=/^http:\/\//i.test(rec.e.poster)?'/api/img?u='+encodeURIComponent(rec.e.poster):rec.e.poster; }
   else generate(img);
 }
 const posterIO=new IntersectionObserver(ents=>ents.forEach(en=>{if(en.isIntersecting){ensurePoster(en.target);posterIO.unobserve(en.target)}}),{rootMargin:'120% 0px'});
