@@ -22,7 +22,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.15';
+const VERSION = '2026-10-02.16';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -431,7 +431,10 @@ function sameVenue(a, b) {
   if (d < 700 && (a.aliases.includes(kb) || b.aliases.includes(ka))) return true; // sources.js 별칭
   const contains = Math.min(ka.length, kb.length) >= 3 && (ka.includes(kb) || kb.includes(ka));
   if (contains && d < (a.crawl || b.crawl ? 400 : 150)) return true;            // 한쪽 이름이 다른 쪽에 포함
-  return d < 60 && nameSim(a.key, b.key) >= 0.7;                                 // 거의 같은 자리 + 이름이 매우 비슷
+  // 거의 같은 자리 + 흔한 단어(미술관·갤러리 등)를 뺀 이름이 같음 ('서울시립 남서울미술관' = '서울시립미술관 남서울미술관')
+  // 한가람미술관/한가람디자인미술관처럼 같은 단지의 다른 관은 이름이 달라서 합쳐지지 않음
+  const core = k => simKey(k).replace(GENERIC, '');
+  return d < 60 && core(a.key) === core(b.key) && core(a.key).length >= 2;
 }
 // 이름 유사도 (두 글자 조각 겹침). '갤러리·미술관' 같은 흔한 단어는 빼고 비교
 const GENERIC = /갤러리|미술관|박물관|아트센터|센터|문화|gallery|museum|art/gi;
