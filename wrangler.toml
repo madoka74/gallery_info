@@ -11,7 +11,7 @@ binding = "ASSETS"
 # 정리된 전시 데이터를 담아 두는 KV. id는 `npx wrangler kv namespace create CACHE` 결과로 바꿔 넣으세요.
 [[kv_namespaces]]
 binding = "CACHE"
-id = "여기에_KV_ID"
+id = "29a829b1c87f4ee7a5af0214e89d9f3f"
 
 # 6시간마다 두 API에서 새로 받아 KV를 갱신 (UTC 기준 0, 6, 12, 18시)
 [triggers]
