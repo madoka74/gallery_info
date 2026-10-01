@@ -22,7 +22,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.13';
+const VERSION = '2026-10-02.15';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -234,8 +234,32 @@ async function rebuild(env) {
   const active = all.filter(it => it.end >= today);
   stats.endedDropped = all.length - active.length;
   const venues = buildVenues(active, stats);
+  stats.newToday = await stampFirstSeen(env, venues);
   await env.CACHE.put(DATASET_KEY, JSON.stringify({ updatedAt: new Date().toISOString(), venues, stats }));
   return stats;
+}
+
+// 전시마다 '처음 들어온 시각'을 붙임 → 앱에서 NEW 표시에 사용
+// 키는 공간 id + 정리한 제목. 출처가 바뀌어 대표 제목이 달라져도 합쳐진 다른 표기로 이전 시각을 찾아 이어 씀
+const FS_KEY = 'firstseen:v1';
+async function stampFirstSeen(env, venues) {
+  const stored = await env.CACHE.get(FS_KEY, 'json');
+  const firstRun = !stored, m = stored || {}, now = new Date().toISOString(), live = new Set();
+  let fresh = 0;
+  for (const v of venues) for (const e of v.ex) {
+    const keys = [e.title, ...(e.alt || [])].map(t => v.id + '|' + titleKey(t)).filter(k => !k.endsWith('|'));
+    const known = keys.map(k => m[k]).filter(Boolean).sort()[0];
+    // 처음 기능을 켤 때 이미 있던 전시는 NEW로 치지 않도록 아주 옛날 시각을 줌
+    const fs = known || (firstRun ? '2000-01-01T00:00:00.000Z' : now);
+    if (!known && !firstRun) fresh++;
+    keys.forEach(k => { if (!m[k] || m[k] > fs) m[k] = fs; live.add(k); });
+    e.firstSeen = fs; e.nk = keys[0];
+  }
+  // 끝난 전시 기록이 너무 쌓이면 정리
+  const all = Object.keys(m);
+  if (all.length > 6000) all.filter(k => !live.has(k)).sort((a, b) => m[a].localeCompare(m[b])).slice(0, all.length - 4000).forEach(k => delete m[k]);
+  await env.CACHE.put(FS_KEY, JSON.stringify(m));
+  return fresh;
 }
 
 /* ---- 문화포털 ---- */
@@ -350,6 +374,7 @@ function buildVenues(items, stats) {
     if (!prev) { byEx.set(k, it); continue; }
     const keep = rank(prev) >= rank(it) ? prev : it, other = keep === prev ? it : prev;
     keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee; keep.artist ||= other.artist;
+    keep.alt = [...new Set([...(keep.alt || []), other.title, ...(other.alt || [])])].filter(t => t !== keep.title);
     byEx.set(k, keep);
   }
   // 2) 공간 키로 묶기 (홈페이지 수집 공간은 sources.js의 공간 하나 = 한 묶음)
@@ -452,9 +477,10 @@ function sameExhibition(x, y) {
   if (Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a)) && overlap) return true; // 부제 유무
   const sim = bigramSim(a, b);
   if (sim >= 0.6 && overlap) return true;
-  // 기간이 완전히 같고, 제목이 조금 비슷하거나 한쪽 작가 이름이 다른 쪽 제목에 있으면 (한·영 표기 차이)
+  // 기간이 완전히 같고 한쪽 작가 이름이 다른 쪽 제목에 있으면 (한·영 표기 차이)
+  // 같은 날 함께 열리는 다른 전시('회화의 시간'·'조각의 시간')를 잘못 합치지 않도록 제목 유사도만으로는 합치지 않음
   const artistIn = (p, q) => String(p.artist || '').split(/[,·\s]+/).some(n => n.length >= 2 && titleKey(q.title).includes(n.toLowerCase()));
-  return sameDates && (sim >= 0.35 || artistIn(x, y) || artistIn(y, x));
+  return sameDates && (artistIn(x, y) || artistIn(y, x));
 }
 function dedupeTitles(list) {
   const out = [];
@@ -464,6 +490,7 @@ function dedupeTitles(list) {
     const prev = out[i];
     const keep = rank(prev) >= rank(it) ? prev : it, other = keep === prev ? it : prev;
     keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee; keep.artist ||= other.artist; keep.sub ||= other.sub;
+    keep.alt = [...new Set([...(keep.alt || []), other.title, ...(other.alt || [])])].filter(t => t !== keep.title); // 합쳐진 다른 표기
     out[i] = keep;
   }
   return out;
