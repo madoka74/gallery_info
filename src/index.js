@@ -21,7 +21,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.8';
+const VERSION = '2026-10-02.9';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -375,17 +375,44 @@ function dupeCandidates(venues) {
 // 같은 전시가 여러 출처에 있으면: 홈페이지 수집 > 서울시 > 문화포털 순으로 대표를 고름
 const rank = it => ({ crawl: 3, seoul: 2, culture: 1 })[it.src] || 0;
 
-// 공간을 합친 뒤에도 같은 제목이 남으면 하나로 (서울 데이터 우선, 빈 칸은 서로 채움)
+// 같은 공간 안의 같은 전시를 하나로. 출처마다 제목 표기가 달라서
+// (《 》·[순회 전시]·'개인전' 같은 꾸밈, 띄어쓰기, 부제 유무) 정규화한 제목과 기간으로 비교
+function titleKey(t) {
+  return String(t || '')
+    .replace(/^\s*\[[^\]]*\]\s*/, '')                                   // [순회 전시] 같은 머리말
+    .replace(/[《》〈〉<>「」『』“”"'‘’\[\]()（）:：·∙\-–—~,.!?]/g, ' ')
+    .replace(/(개인전|특별전|기획전|초대전|展|exhibition|solo show)/gi, ' ')
+    .replace(/\s+/g, '').toLowerCase();
+}
+function bigramSim(a, b) {
+  const bi = k => { const o = new Set(); for (let i = 0; i < k.length - 1; i++) o.add(k.slice(i, i + 2)); return o; };
+  const A = bi(a), B = bi(b); let n = 0; A.forEach(x => B.has(x) && n++);
+  return A.size + B.size ? (2 * n) / (A.size + B.size) : 0;
+}
+function sameExhibition(x, y) {
+  const a = titleKey(x.title), b = titleKey(y.title);
+  if (!a || !b) return false;
+  const overlap = x.start <= y.end && y.start <= x.end;      // 기간이 겹침
+  const sameDates = x.start === y.start && x.end === y.end;
+  if (a === b) return overlap;
+  if (Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a)) && overlap) return true; // 부제 유무
+  const sim = bigramSim(a, b);
+  if (sim >= 0.6 && overlap) return true;
+  // 기간이 완전히 같고, 제목이 조금 비슷하거나 한쪽 작가 이름이 다른 쪽 제목에 있으면 (한·영 표기 차이)
+  const artistIn = (p, q) => String(p.artist || '').split(/[,·\s]+/).some(n => n.length >= 2 && titleKey(q.title).includes(n.toLowerCase()));
+  return sameDates && (sim >= 0.35 || artistIn(x, y) || artistIn(y, x));
+}
 function dedupeTitles(list) {
-  const m = new Map();
+  const out = [];
   for (const it of list) {
-    const k = norm(it.title), prev = m.get(k);
-    if (!prev) { m.set(k, it); continue; }
+    const i = out.findIndex(o => sameExhibition(o, it));
+    if (i < 0) { out.push(it); continue; }
+    const prev = out[i];
     const keep = rank(prev) >= rank(it) ? prev : it, other = keep === prev ? it : prev;
     keep.poster ||= other.poster; keep.link ||= other.link; keep.fee ||= other.fee; keep.artist ||= other.artist; keep.sub ||= other.sub;
-    m.set(k, keep);
+    out[i] = keep;
   }
-  return [...m.values()];
+  return out;
 }
 
 /* ---------------- debug ---------------- */
