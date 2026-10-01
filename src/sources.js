@@ -10,6 +10,8 @@ export const SOURCES = [
   // ---- 미술관 ----
   { id: 'leeum', name: '리움미술관', addr: '용산구 이태원로55길 60-16', lat: 37.5383, lng: 126.9990, home: 'https://www.leeumhoam.org', url: 'https://www.leeumhoam.org/leeum/exhibition', render: true, aliases: ['삼성미술관 리움','삼성미술관 Leeum','리움','Leeum'] },
   { id: 'hoam', name: '호암미술관', addr: '경기 용인시 처인구 포곡읍 에버랜드로562번길 38', lat: 37.2936, lng: 127.2003, home: 'https://www.leeumhoam.org', url: 'https://www.leeumhoam.org/hoam/exhibition', render: true, aliases: ['삼성 호암미술관','Hoam Museum of Art','호암'] },
+  // 뮤지엄 산: 홈페이지가 자바스크립트 앱이라 렌더링 필수. 전시 목록 주소가 따로 안 보여서 홈에서 뽑고, 없으면 홈 링크에서 전시 페이지를 찾음
+  { id: 'museumsan', name: '뮤지엄 산', addr: '강원 원주시 지정면 오크밸리2길 260', lat: 37.4157, lng: 127.8228, home: 'https://www.museumsan.org', url: 'https://www.museumsan.org/', render: true, aliases: ['뮤지엄산','Museum SAN','뮤지엄SAN','한솔뮤지엄'] },
   // 예술의전당: 미술관·박물관 일정 페이지 하나에 세 관 전시가 함께 나옴 → 관별로 나눠 수집
   { id: 'sac-hangaram', name: '예술의전당 한가람미술관', addr: '서초구 남부순환로 2406', lat: 37.4790, lng: 127.0118, home: 'https://www.sac.or.kr', url: 'https://www.sac.or.kr/site/main/program/schedule?tab=3', render: true, branch: '한가람미술관 (1~7전시실). 한가람디자인미술관·서울서예박물관 전시는 제외', aliases: ['한가람미술관','예술의전당 한가람미술관 제7전시실','Hangaram Art Museum'] },
   { id: 'sac-design', name: '예술의전당 한가람디자인미술관', addr: '서초구 남부순환로 2406', lat: 37.4784, lng: 127.0124, home: 'https://www.sac.or.kr', url: 'https://www.sac.or.kr/site/main/program/schedule?tab=3', render: true, branch: '한가람디자인미술관만', aliases: ['한가람디자인미술관','Hangaram Design Museum'] },
