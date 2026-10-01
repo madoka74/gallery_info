@@ -349,12 +349,19 @@ function sameVenue(a, b) {
   if (ka === kb && d < 700) return true;                                        // 같은 이름
   if (d < 700 && (a.aliases.includes(kb) || b.aliases.includes(ka))) return true; // sources.js 별칭
   const contains = Math.min(ka.length, kb.length) >= 3 && (ka.includes(kb) || kb.includes(ka));
-  return contains && d < (a.crawl || b.crawl ? 400 : 150);                       // 한쪽 이름이 다른 쪽에 포함
+  if (contains && d < (a.crawl || b.crawl ? 400 : 150)) return true;            // 한쪽 이름이 다른 쪽에 포함
+  return d < 60 && nameSim(a.key, b.key) >= 0.7;                                 // 거의 같은 자리 + 이름이 매우 비슷
+}
+// 이름 유사도 (두 글자 조각 겹침). '갤러리·미술관' 같은 흔한 단어는 빼고 비교
+const GENERIC = /갤러리|미술관|박물관|아트센터|센터|문화|gallery|museum|art/gi;
+function nameSim(a, b) {
+  const bi = s => { const k = simKey(s).replace(GENERIC, ''), out = new Set(); for (let i = 0; i < k.length - 1; i++) out.add(k.slice(i, i + 2)); return out; };
+  const A = bi(a), B = bi(b); let n = 0; A.forEach(x => B.has(x) && n++);
+  return A.size + B.size ? (2 * n) / (A.size + B.size) : 0;
 }
 // 점검용: 합치지 못한 '비슷한 공간' 쌍
 function dupeCandidates(venues) {
-  const bi = s => { const k = simKey(s), out = new Set(); for (let i = 0; i < k.length - 1; i++) out.add(k.slice(i, i + 2)); return out; };
-  const sim = (a, b) => { const A = bi(a), B = bi(b); let n = 0; A.forEach(x => B.has(x) && n++); return A.size + B.size ? (2 * n) / (A.size + B.size) : 0; };
+  const sim = nameSim;
   const out = [];
   for (let i = 0; i < venues.length; i++) for (let j = i + 1; j < venues.length; j++) {
     const a = venues[i], b = venues[j], d = haversine(a.lat, a.lng, b.lat, b.lng), s2 = sim(a.name, b.name);
