@@ -13,7 +13,7 @@ const MAX_TEXT = 25000;           // Gemini에 넘기는 텍스트 상한 (글�
 const RETRY_MS = 60 * 60e3;       // 일시적 실패(할당량 초과, 서버 오류)는 1시간 뒤 다시
 const GEMINI_GAP_MS = 4000;       // Gemini 호출 사이 간격
 const DETAIL_MAX = 6;             // 목록에 기간이 없을 때 열어 볼 상세 페이지 수
-const EXTRACT_VER = 3;            // 추출 방식이 바뀌면 올림 → 페이지가 그대로여도 다시 추출
+const EXTRACT_VER = 4;            // 추출 방식이 바뀌면 올림 → 페이지가 그대로여도 다시 추출
 
 /* ---------- 배치 실행 ---------- */
 export async function crawlBatch(env, opts = {}) {
@@ -270,7 +270,9 @@ function parseRobots(txt) {
 export function htmlToText(html, base) {
   let h = String(html || '')
     .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<(script|style|noscript|svg|iframe|template|head)\b[\s\S]*?<\/\1>/gi, ' ');
+    .replace(/<(script|style|noscript|svg|iframe|template|head)\b[\s\S]*?<\/\1>/gi, ' ')
+    // 사이트 메뉴·머리말·꼬리말은 전시 정보가 아니라서 버림 (메뉴가 길면 본문이 글자 수 제한에 잘려 나감)
+    .replace(/<(nav|header|footer|aside)\b[\s\S]*?<\/\1>/gi, ' ');
   // 배경 이미지로 쓰인 포스터
   h = h.replace(/<[^>]*style=["'][^"']*url\(\s*['"]?([^'")]+)['"]?\s*\)[^>]*>/gi, (tag, u) => `${tag} [IMG ${abs(u, base)}] `);
   h = h.replace(/<img\b[^>]*>/gi, tag => {
@@ -286,8 +288,16 @@ export function htmlToText(html, base) {
   h = h.replace(/[ \t\f\r]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{2,}/g, '\n').trim();
   // 메뉴·푸터처럼 반복되는 짧은 줄은 한 번만 (토큰 절약)
   const seen = new Set();
-  h = h.split('\n').filter(line => { if (line.length > 40) return true; if (seen.has(line)) return false; seen.add(line); return true; }).join('\n');
-  return h.slice(0, MAX_TEXT);
+  let lines = h.split('\n').filter(line => { if (line.length > 40) return true; if (seen.has(line)) return false; seen.add(line); return true; });
+  // 링크 하나에 짧은 글자만 있는 줄이 8줄 넘게 이어지면 메뉴 덩어리로 보고 버림
+  const isMenuLine = l => /^\[LINK [^\]]+\]\s*\S.{0,18}$/.test(l) && !/\d{4}[.\-/]\d{1,2}/.test(l);
+  const out = [];
+  for (let i = 0; i < lines.length;) {
+    let j = i; while (j < lines.length && isMenuLine(lines[j])) j++;
+    if (j - i >= 8) { i = j; continue; }
+    out.push(lines[i]); i++;
+  }
+  return out.join('\n').slice(0, MAX_TEXT);
 }
 function abs(u, base) { try { return new URL(String(u).replace(/&amp;/g, '&').trim(), base).href; } catch { return ''; } }
 
