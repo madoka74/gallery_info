@@ -176,6 +176,8 @@ async function crawlOne(env, src, prev, force) {
     if (found) { url = found; page = await getPage(env, src, url); }
   }
   if (!page.ok) throw new Error(page.error);
+  // 렌더링이 꼭 필요한 사이트인데 렌더링이 막혔으면(한도 초과·시간 초과) 빈 껍데기로 제미나이를 부르지 않고 1시간 뒤 다시
+  if (src.render && page.via === 'html' && page.renderError && page.text.length < 3000) throw new Error(page.renderError);
 
   const hash = await sha1(page.text);
   if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items?.length) return { ...prev, url, srcUrl: src.url, via: page.via, changed: false };
@@ -207,6 +209,8 @@ async function crawlOne(env, src, prev, force) {
     const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
     items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
   }
+  // 렌더링 한도 때문에 못 찾은 거면 지난 결과를 지우지 않고 1시간 뒤 다시
+  if (!items.length && /rate limit|2001|429/i.test(renderError)) throw new Error('브라우저 렌더링 실패(한도 초과): ' + renderError);
   return { url, srcUrl: src.url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError };
 }
 
@@ -264,7 +268,12 @@ async function readHtml(res) {
   catch { return new TextDecoder('utf-8').decode(buf); }
 }
 
+// 무료 플랜: 렌더링 요청은 10초에 1번, 하루 브라우저 사용 10분(UTC 0시 = 한국 오전 9시 초기화)
+let lastRender = 0;
 async function rendered(env, url, retried, gentle) {
+  const gap = lastRender + 10500 - Date.now();
+  if (gap > 0) await new Promise(r => setTimeout(r, gap));
+  lastRender = Date.now();
   for (const path of ['browser-run', 'browser-rendering']) {
     // gentle: 스스로 이동(리다이렉트)하거나 이미지·영상이 끝없이 로딩돼 시간 초과 나는 사이트용.
     // 문서 뼈대만 받으면 바로 진행하고, 화면이 그려질 시간을 잠깐 준 뒤 읽음
