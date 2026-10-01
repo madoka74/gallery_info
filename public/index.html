@@ -371,7 +371,7 @@ const observePosters=root=>{root.querySelectorAll('img[data-poster]:not([data-do
 /* ---------- NEW: 새로 들어온 전시. 화면에 1초 넘게 보이면 본 것으로 치고, 지나가면 표시를 지움 ---------- */
 const seenSet=new Set(S.seen);
 let seenSaveT;
-function isNewE(e){const k=keyOf(e);return !!(e.firstSeen&&e.firstSeen>S.since&&!seenSet.has(k)&&!S.visited[k])}
+function isNewE(e){const k=keyOf(e);return !!(e.firstSeen&&e.firstSeen>S.since&&!seenSet.has(k)&&!seenSet.has(e.id)&&!S.visited[k])}
 function markSeen(key){
   if(!key||seenSet.has(key))return;
   seenSet.add(key);S.seen=[...seenSet].slice(-4000);
@@ -406,11 +406,50 @@ async function refreshHeartBadge(){
 const EX=new Map(); // 전시 id → {e, v}
 function remember(e,v){EX.set(e.id,{e,v:slim(v)})}
 const keyOf=e=>e.nk||e.id;
+/* 본 전시·별표 찾기: 서버에서 전시 id/키가 바뀌어도(공간 합치기·대표 제목 변경 등) 같은 전시면 알아보고 새 키로 옮김 */
+const tkey=s=>String(s||'').toLowerCase().replace(/개인전|특별전|기획전|展|exhibition/g,'').replace(/[\s\[\]()<>《》〈〉「」『』"'“”‘’:·.,\-–—_!?~|/]/g,'');
+const titlesOf=e=>[e.title,...(Array.isArray(e.alt)?e.alt:[])].map(tkey).filter(t=>t.length>=2);
+const overlaps=(a,b)=>!a.start||!b.start||!a.end||!b.end||(a.start<=b.end&&b.start<=a.end);
+function nearV(a,b){
+  if(!a||!b)return false; if(a.id&&a.id===b.id)return true;
+  if(isFinite(a.lat)&&isFinite(b.lat)){const dy=(a.lat-b.lat)*111,dx=(a.lng-b.lng)*88;if(dx*dx+dy*dy<4)return true}
+  const n=s=>tkey(s).replace(/서울관|서울점|본관|본점|서울|미술관|갤러리|박물관|museum|gallery/g,'');
+  const x=n(a.name),y=n(b.name);return x.length>=2&&y.length>=2&&(x.includes(y)||y.includes(x));
+}
+function sameEx(e1,v1,e2,v2){
+  if(e1.id===e2.id||(e1.nk&&e1.nk===e2.nk))return true;
+  if(!overlaps(e1,e2)||!nearV(v1,v2))return false;
+  const A=titlesOf(e1),B=titlesOf(e2);
+  return A.some(a=>B.some(b=>a===b||(Math.min(a.length,b.length)>=4&&(a.includes(b)||b.includes(a)))));
+}
+// 이 전시의 관람 기록 키 (다른 키로 저장돼 있으면 지금 키로 옮김)
+function visitKey(e,v){
+  const k=keyOf(e);
+  if(S.visited[k]){S.visited[k].e=e;if(v)S.visited[k].v=slim(v);return k}
+  for(const [ok,r] of Object.entries(S.visited)){
+    if(r.e&&sameEx(e,v||{},r.e,r.v||{})){delete S.visited[ok];S.visited[k]={...r,e,v:v?slim(v):r.v};save();return k}
+  }
+  return null;
+}
+function starOf(e,v){
+  const s=S.stars.find(s=>s.e.id===e.id)||S.stars.find(s=>sameEx(e,v||{},s.e,s.v||{}));
+  if(s&&s.e.id!==e.id){s.e=e;if(v)s.v=slim(v);save()}
+  return s||null;
+}
+// 예전에 다른 키로 두 번 체크된 같은 전시는 하나로 (먼저 본 날짜 유지)
+(function dedupeVisited(){
+  const ent=Object.entries(S.visited).filter(([,r])=>r&&r.e);let changed=false;
+  for(let i=0;i<ent.length;i++)for(let j=i+1;j<ent.length;j++){
+    const [ka,a]=ent[i],[kb,b]=ent[j];if(!S.visited[ka]||!S.visited[kb])continue;
+    if(sameEx(a.e,a.v||{},b.e,b.v||{})){const keep=a.at<=b.at?ka:kb,drop=keep===ka?kb:ka;delete S.visited[drop];changed=true}
+  }
+  if(changed)save();
+})();
 const fmtDay=ymd=>String(ymd||'').replace(/-/g,'.');
 const stampHTML=key=>`<div class="stamp" role="button" tabindex="0" data-stamp="${esc(key)}" aria-label="관람 날짜 ${fmtDay(S.visited[key].at)}, 눌러서 바꾸기"><b>관람 완료</b><small>${fmtDay(S.visited[key].at)}</small></div>`;
 function cardHTML(e,v,meta={}){
   const st=status(e),d=dist(v),key=keyOf(e);
-  const starred=S.stars.some(s=>s.e.id===e.id),hearted=isHeart(v.id),visited=!!S.visited[key],fresh=isNewE(e);
+  const starred=!!starOf(e,v),hearted=isHeart(v.id),visited=!!visitKey(e,v),fresh=isNewE(e);
   return `<article class="card${st.kind==='ended'?' is-ended':''}${visited?' is-visited':''}" data-ex="${esc(e.id)}" data-key="${esc(key)}">
     <div class="poster">
       <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}">${fresh?'<span class="newtag">NEW</span>':''}${visited?stampHTML(key):''}</div>
@@ -534,10 +573,11 @@ async function renderHearts(){
 /* ---------- MY: 담은 전시(스냅샷)를 같은 카드로, 종료일 빠른 순 ---------- */
 function renderMy(){
   const el=$('#view-my');
-  const visitedKeys=new Set(Object.keys(S.visited));
+  const vlist=Object.values(S.visited).filter(r=>r&&r.e);
+  const isVisited=s=>!!S.visited[keyOf(s.e)]||vlist.some(r=>sameEx(s.e,s.v||{},r.e,r.v||{}));
   // 위: 별표했고 아직 안 본 전시 (종료일 빠른 순) · 아래: 관람 기록 (최근에 본 순, 전시가 끝나도 유지)
-  const starred=S.stars.filter(s=>!visitedKeys.has(keyOf(s.e))).sort((a,b)=>D(a.e.end)-D(b.e.end)||D(a.e.start)-D(b.e.start));
-  const log=Object.entries(S.visited).map(([k,r])=>({...r,k})).sort((a,b)=>b.at.localeCompare(a.at));
+  const starred=S.stars.filter(s=>!isVisited(s)).sort((a,b)=>D(a.e.end)-D(b.e.end)||D(a.e.start)-D(b.e.start));
+  const log=Object.entries(S.visited).filter(([,r])=>r&&r.e).map(([k,r])=>({...r,k})).sort((a,b)=>b.at.localeCompare(a.at));
   starred.forEach(s=>remember(s.e,s.v));log.forEach(r=>remember(r.e,r.v));
   if(!starred.length&&!log.length){el.innerHTML=`<div class="empty"><h3>담은 전시가 없어요</h3><p>카드의 별을 누르면 종료일이 가까운 순서로, 체크를 누르면 관람 기록으로 여기에 모입니다.</p><button class="btn" data-goto="near">근처 전시 보기</button></div>`;return}
   el.innerHTML=starred.map(({e,v})=>cardHTML(e,v)).join('')
@@ -708,7 +748,8 @@ async function pvSave(){
 let tab='near';
 function updateTop(){
   const c=$('#ctx');
-  const liveStars=S.stars.filter(s=>D(s.e.end)>=today&&!S.visited[keyOf(s.e)]).length;
+  const vl=Object.values(S.visited).filter(r=>r&&r.e);
+  const liveStars=S.stars.filter(s=>D(s.e.end)>=today&&!S.visited[keyOf(s.e)]&&!vl.some(r=>sameEx(s.e,s.v||{},r.e,r.v||{}))).length;
   const b=$('#mybadge');b.hidden=!liveStars;b.textContent=liveStars;
   if(tab==='near')c.innerHTML=`<button data-goto="settings">${ICON.pin}${esc(origin().name)}</button>${near.total?`<span class="mono">${near.shown}/${near.total}곳</span>`:''}`;
   else if(tab==='heart')c.innerHTML=`<span>하트 공간 <span class="mono">${heartInfo.venues}</span>곳 · 전시 <span class="mono">${heartInfo.count}</span></span>`;
@@ -732,8 +773,8 @@ function show(t){
 let toastT;
 function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,1800)}
 function toggleStar(id){
-  const i=S.stars.findIndex(s=>s.e.id===id),on=i<0;
-  if(on){const rec=EX.get(id);if(!rec)return;S.stars.push({e:rec.e,v:rec.v})}else S.stars.splice(i,1);
+  const rec=EX.get(id),cur=rec?starOf(rec.e,rec.v):S.stars.find(s=>s.e.id===id),on=!cur;
+  if(on){if(!rec)return;S.stars.push({e:rec.e,v:rec.v})}else S.stars.splice(S.stars.indexOf(cur),1);
   save();
   document.querySelectorAll(`[data-star="${CSS.escape(id)}"]`).forEach(b=>b.setAttribute('aria-pressed',on));
   toast(on?'MY에 담았어요':'MY에서 뺐어요');updateTop();
@@ -751,7 +792,7 @@ function paintVisit(key){
 function toggleVisit(id){
   const rec=EX.get(id);if(!rec)return;
   const key=keyOf(rec.e);
-  if(S.visited[key]){openVisitDialog(key);return}
+  if(visitKey(rec.e,rec.v)){openVisitDialog(key);return}
   S.visited[key]={at:localYmd(),e:rec.e,v:rec.v};markSeen(key);save();paintVisit(key);
   toast('오늘 본 전시로 표시했어요 · 스탬프를 누르면 날짜를 바꿀 수 있어요');
 }
