@@ -122,7 +122,8 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .del{height:30px;min-width:30px;border-radius:8px;display:grid;place-items:center;color:var(--muted);font-size:12px;padding-inline:6px}
 .del svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
 .del[data-armed]{background:var(--heart);color:var(--surface);font-weight:600}
-.field{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:14px}
+.field{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:16px} /* 16px 미만이면 아이폰이 입력할 때 화면을 확대함 */
+input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .arow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-block:8px;border-top:1px solid var(--line)}
 .arow:first-child{border-top:0}
 .btn{padding:7px 14px;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:600;white-space:nowrap}
@@ -645,7 +646,7 @@ function openVisitDialog(key){
   const r=S.visited[key];if(!r)return;dlgKey=key;
   $('#visitdlg-sub').textContent=`${r.e.title} · ${r.v.name}`;
   const inp=$('#visitdate');inp.value=r.at;inp.max=localYmd();
-  $('#visitdlg').hidden=false;inp.focus();
+  $('#visitdlg').hidden=false;
 }
 function closeVisitDialog(){$('#visitdlg').hidden=true;dlgKey=null}
 function saveVisitDate(){
