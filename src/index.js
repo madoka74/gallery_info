@@ -7,10 +7,13 @@
 //   SEOUL_KEY       서울 열린데이터광장 인증키
 //   ADMIN_TOKEN     /api/refresh, /api/debug 호출용 임의 문자열
 
-const CULTURE_URL = 'https://apis.data.go.kr/B553457/nopenapi/rest/publicperformancedisplays/period';
+// 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
+// from~to는 '기간이 겹치는' 항목을 돌려줌. 정상 resultCode는 00.
+const CULTURE_URL = 'https://apis.data.go.kr/B553457/cultureinfo/period2';
 const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(key)}/json/culturalEventInfo`;
-// 수집 범위: 서울과 인접 지역
-const BOX = { latMin: 37.25, latMax: 37.75, lngMin: 126.70, lngMax: 127.30 };
+// 수집 범위: 수도권 (서울·인천·경기). 넓히면 KV 데이터가 커져 요청당 CPU가 늘어남
+const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
+const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 
@@ -127,53 +130,52 @@ function cultureKey(env) {
   if (!k) throw new Error('DATA_GO_KR_KEY 비밀값이 없습니다');
   return k.includes('%') ? k : encodeURIComponent(k); // Encoding 키면 그대로, Decoding 키면 인코딩
 }
-function cultureUrl(env, page, withGps) {
+function cultureUrl(env, page, rows = 1000) {
   const t = kstToday();
-  const p = new URLSearchParams({
-    from: ymdCompact(addDays(t, -400)), to: ymdCompact(addDays(t, 120)),
-    cPage: String(page), rows: '100', sortStdr: '1'
-  });
-  if (withGps) {
-    p.set('gpsxfrom', String(BOX.lngMin)); p.set('gpsxto', String(BOX.lngMax));
-    p.set('gpsyfrom', String(BOX.latMin)); p.set('gpsyto', String(BOX.latMax));
-  }
-  return `${CULTURE_URL}?${p}&serviceKey=${cultureKey(env)}`;
+  // 오늘~60일 뒤와 겹치는 것 = 지금 열려 있거나 곧 열리는 전시
+  return `${CULTURE_URL}?serviceKey=${cultureKey(env)}&from=${ymdCompact(t)}&to=${ymdCompact(addDays(t, 60))}` +
+    `&numOfrows=${rows}&cPage=${page}&sortStdr=1`;
 }
 async function fetchCulture(env, stats) {
-  let withGps = true, out = [], total = 0, raw = 0;
-  for (let page = 1; page <= 20; page++) {
-    const xml = await (await fetch(cultureUrl(env, page, withGps))).text();
+  const out = [], realms = {};
+  let total = 0, raw = 0, noPos = 0, outside = 0;
+  for (let page = 1; page <= 8; page++) {
+    const xml = await (await fetch(cultureUrl(env, page), { headers: { accept: 'application/xml' } })).text();
     cultureCheck(xml);
-    if (page === 1) {
-      total = parseInt(tag(xml, ['totalCount']) || '0', 10);
-      if (!total && withGps) { withGps = false; page = 0; continue; } // GPS 조건이 안 먹으면 조건 없이 다시
-    }
-    const blocks = blockList(xml, ['perforList', 'item']);
+    if (page === 1) total = parseInt(tag(xml, ['totalCount']) || '0', 10);
+    const blocks = blockList(xml, ['item']);
     raw += blocks.length;
-    out.push(...blocks.map(parseCulture).filter(Boolean));
-    if (!blocks.length || page * 100 >= total) break;
+    for (const b of blocks) {
+      const realm = tag(b, ['realmName']);
+      realms[realm || '(없음)'] = (realms[realm || '(없음)'] || 0) + 1;
+      const e = parseCulture(b);
+      if (!e) continue;
+      if (e.lat == null) { noPos++; out.push(e); continue; } // 좌표 없음: 같은 이름 공간에 붙여 살림
+      if (!inBox(e)) { outside++; continue; }
+      out.push(e);
+    }
+    if (!blocks.length || page * 1000 >= total) break;
   }
-  stats.cultureTotal = total; stats.cultureRaw = raw; stats.cultureExhibitions = out.length; stats.cultureGpsFilter = withGps;
+  Object.assign(stats, { cultureTotal: total, cultureRaw: raw, cultureExhibitions: out.length, cultureNoCoords: noPos, cultureOutside: outside, cultureRealms: realms });
   return out;
 }
 function cultureCheck(xml) {
-  const err = xml.match(/SERVICE_KEY_IS_NOT_REGISTERED_ERROR|SERVICE_ACCESS_DENIED_ERROR|LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR|SERVICE ERROR|Unauthorized/i);
-  if (err) throw new Error('문화포털 API: ' + err[0]);
-  const code = tag(xml, ['resultCode']);
-  if (code && !/^0+$/.test(code)) throw new Error(`문화포털 API: ${code} ${tag(xml, ['resultMsg'])}`);
+  const rc = tag(xml, ['resultCode']);
+  if (rc === '00') return;
+  const reason = tag(xml, ['returnReasonCode']), msg = tag(xml, ['errMsg', 'returnAuthMsg', 'resultMsg']);
+  throw new Error(`문화포털 API 실패 ${reason || rc || ''} ${msg || xml.slice(0, 120)}`.trim());
 }
 function parseCulture(b) {
-  const realm = tag(b, ['realmName', 'realm', 'genreName']);
-  if (realm && !/전시|미술/.test(realm)) return null;
-  const pos = fixLatLng(tag(b, ['gpsY', 'gpsy', 'latitude']), tag(b, ['gpsX', 'gpsx', 'longitude']));
-  const place = tag(b, ['place', 'placeName']);
-  const start = ymd(tag(b, ['startDate', 'startdate'])), end = ymd(tag(b, ['endDate', 'enddate']));
-  if (!pos || !place || !start || !end) return null;
+  if (tag(b, ['realmName']) !== '전시') return null;
+  const place = tag(b, ['place']);
+  const start = ymd(tag(b, ['startDate'])), end = ymd(tag(b, ['endDate']));
+  if (!place || !start || !end) return null;
+  const pos = fixLatLng(tag(b, ['gpsY']), tag(b, ['gpsX'])) || { lat: null, lng: null };
+  const area = [tag(b, ['area']), tag(b, ['sigungu'])].filter(Boolean).join(' ');
   return {
     id: 'c' + (tag(b, ['seq']) || hash(tag(b, ['title']) + place)),
-    src: 'culture', title: tag(b, ['title']), sub: '', artist: '', genre: realm || '전시',
-    start, end, fee: tag(b, ['price']) || '', poster: https(tag(b, ['thumbnail', 'imgUrl'])),
-    link: https(tag(b, ['url', 'placeUrl'])) || '', place, addr: tag(b, ['placeAddr', 'area', 'sigungu']), ...pos
+    src: 'culture', title: tag(b, ['title']), sub: '', artist: '', genre: '전시',
+    start, end, fee: '', poster: https(tag(b, ['thumbnail'])), link: '', place, addr: area, ...pos
   };
 }
 
@@ -190,7 +192,7 @@ async function fetchSeoul(env, stats) {
   stats.seoulFiltered = rows.length > 0;
   // 2차: 거르기가 안 되면 전체 받아서 직접 거르기
   if (!rows.length) rows = await seoulPages(base, '', 8);
-  const out = rows.filter(r => /전시|미술/.test(r.CODENAME || '')).map(parseSeoul).filter(Boolean);
+  const out = rows.filter(r => /전시|미술/.test(r.CODENAME || '')).map(parseSeoul).filter(Boolean).filter(inBox);
   stats.seoulRaw = rows.length; stats.seoulExhibitions = out.length;
   return out;
 }
@@ -237,8 +239,9 @@ function buildVenues(items, stats) {
     byEx.set(k, keep);
   }
   // 2) 공간 키로 묶기
-  const groups = new Map();
+  const groups = new Map(), orphans = [];
   for (const it of byEx.values()) {
+    if (it.lat == null) { orphans.push(it); continue; }
     const k = placeKey(it.place);
     if (!k) continue;
     if (!groups.has(k)) groups.set(k, { key: k, names: [], addr: '', lat: it.lat, lng: it.lng, ex: [] });
@@ -253,6 +256,14 @@ function buildVenues(items, stats) {
     if (host) { host.ex.push(...g.ex); host.names.push(...g.names); host.addr ||= g.addr; }
     else merged.push(g);
   }
+  // 4) 좌표 없는 전시: 이름이 같은(또는 서로 포함하는) 공간이 있으면 거기에 붙임
+  let rescued = 0;
+  for (const it of orphans) {
+    const k = placeKey(it.place);
+    const host = k && (merged.find(m => m.key === k) || merged.find(m => k.length >= 3 && (m.key.includes(k) || k.includes(m.key))));
+    if (host) { host.ex.push(it); rescued++; }
+  }
+  stats.orphansRescued = rescued; stats.orphansDropped = orphans.length - rescued;
   const venues = merged.map(g => ({
     id: 'p' + hash(g.key),
     name: mostCommon(g.names),
@@ -280,7 +291,7 @@ function dedupeTitles(list) {
 async function debugRaw(src, env) {
   let text;
   if (src === 'seoul') text = await (await fetch(`${SEOUL_URL(env.SEOUL_KEY || '')}/1/3`)).text();
-  else text = await (await fetch(cultureUrl(env, 1, true).replace('rows=100', 'rows=3'))).text();
+  else text = await (await fetch(cultureUrl(env, 1, 3))).text();
   for (const k of [env.SEOUL_KEY, env.DATA_GO_KR_KEY]) if (k) text = text.split(k).join('***');
   return text.slice(0, 6000);
 }
