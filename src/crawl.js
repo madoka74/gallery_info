@@ -11,7 +11,7 @@ const UA = 'Mozilla/5.0 (compatible; GakkaunJeonsiBot/1.0; exhibition listings, 
 const RECHECK_MS = 20 * 3600e3;   // 하루에 한 번
 const MAX_TEXT = 60000;           // Gemini에 넘기는 텍스트 상한 (글자)
 const DETAIL_MAX = 6;             // 목록에 기간이 없을 때 열어 볼 상세 페이지 수
-const EXTRACT_VER = 2;            // 추출 방식이 바뀌면 올림 → 페이지가 그대로여도 다시 추출
+const EXTRACT_VER = 3;            // 추출 방식이 바뀌면 올림 → 페이지가 그대로여도 다시 추출
 
 /* ---------- 배치 실행 ---------- */
 export async function crawlBatch(env, opts = {}) {
@@ -37,7 +37,7 @@ export async function crawlBatch(env, opts = {}) {
       state[src.id] = { ...prev, checkedAt: Date.now(), ok: false, error: String(e.message || e).slice(0, 300) };
     }
     const s = state[src.id];
-    report.push({ id: src.id, name: src.name, ok: s.ok, count: (s.items || []).length, detailPages: s.pending || 0, via: s.via, changed: s.changed, url: s.url, error: s.error });
+    report.push({ id: src.id, name: src.name, ok: s.ok, count: (s.items || []).length, detailPages: s.pending || 0, via: s.via, changed: s.changed, url: s.url, error: s.error, renderError: s.renderError || '' });
   }
   await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
   return report;
@@ -59,7 +59,7 @@ export async function crawlStatus(env) {
   return SOURCES.map(s => {
     const st = state[s.id] || {};
     return { id: s.id, name: s.name, ok: st.ok ?? null, count: (st.items || []).length, via: st.via || '', url: st.url || s.url,
-      checkedAt: st.checkedAt ? new Date(st.checkedAt).toISOString() : null, error: st.error || '' };
+      checkedAt: st.checkedAt ? new Date(st.checkedAt).toISOString() : null, error: st.error || '', renderError: st.renderError || '' };
   });
 }
 
@@ -77,20 +77,22 @@ async function crawlOne(env, src, prev, force) {
   if (!page.ok) throw new Error(page.error);
 
   const hash = await sha1(page.text);
-  if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items) return { ...prev, url, via: page.via, changed: false };
+  if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items?.length) return { ...prev, url, via: page.via, changed: false };
 
+  let renderError = page.renderError || '';
   let r = await extract(env, src, page.text, url);
 
   // 아무것도 못 찾았으면 자바스크립트로 목록을 그리는 사이트일 수 있으니 브라우저로 다시
   if (!r.items.length && !r.pending.length && page.via === 'html' && canRender(env)) {
     const p2 = await getPage(env, { ...src, render: true }, url);
     if (p2.ok && p2.via === 'render') { page = p2; r = await extract(env, src, page.text, url); }
+    else renderError = p2.renderError || p2.error || renderError;
   }
-  // 그래도 없으면 홈에서 전시 페이지를 찾아 한 번 더
+  // 그래도 없으면 홈에서 전시 페이지를 찾아 한 번 더 (자바스크립트 사이트면 렌더링한 홈에서 링크를 찾음)
   if (!r.items.length && !r.pending.length && src.home) {
-    const found = await discover(env, src, url);
+    const found = await discover(env, src, url, page.via === 'render');
     if (found && found !== url) {
-      const p3 = await getPage(env, src, found);
+      const p3 = await getPage(env, { ...src, render: page.via === 'render' }, found);
       if (p3.ok) {
         const r3 = await extract(env, src, p3.text, found);
         if (r3.items.length || r3.pending.length) { url = found; page = p3; r = r3; }
@@ -100,11 +102,11 @@ async function crawlOne(env, src, prev, force) {
   // 목록에 기간이 없는 전시는 상세 페이지를 열어서 기간·포스터를 채움
   let items = r.items;
   if (r.pending.length) {
-    const more = await extractDetails(env, src, r.pending.slice(0, DETAIL_MAX));
+    const more = await extractDetails(env, src, r.pending.slice(0, page.via === 'render' ? 4 : DETAIL_MAX), page.via === 'render');
     const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
     items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
   }
-  return { url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true };
+  return { url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError };
 }
 
 /* ---------- 페이지 받기 ---------- */
@@ -112,16 +114,17 @@ const canRender = env => !!(env.CF_ACCOUNT_ID && env.CF_API_TOKEN);
 
 async function getPage(env, src, url) {
   if (!(await robotsAllows(env, url))) return { ok: false, error: 'robots.txt가 수집을 막고 있습니다' };
+  let renderError = '';
   if (src.render && canRender(env)) {
     try { return { ok: true, via: 'render', text: htmlToText(await rendered(env, url), url) }; }
-    catch (e) { /* 실패하면 일반 요청으로 */ }
+    catch (e) { renderError = String(e.message || e).slice(0, 200); } // 실패하면 일반 요청으로
   }
   let res;
   try { res = await fetch(url, { headers: { 'user-agent': UA, accept: 'text/html,*/*', 'accept-language': 'ko,en;q=0.8' }, redirect: 'follow' }); }
   catch (e) { return { ok: false, error: '연결 실패: ' + e.message }; }
-  if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+  if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, renderError };
   const html = await readHtml(res);
-  return { ok: true, via: 'html', text: htmlToText(html, res.url || url) };
+  return { ok: true, via: 'html', text: htmlToText(html, res.url || url), renderError };
 }
 
 async function readHtml(res) {
@@ -137,7 +140,7 @@ async function readHtml(res) {
   catch { return new TextDecoder('utf-8').decode(buf); }
 }
 
-async function rendered(env, url) {
+async function rendered(env, url, retried) {
   for (const path of ['browser-run', 'browser-rendering']) {
     const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/${path}/content`, {
       method: 'POST',
@@ -145,6 +148,12 @@ async function rendered(env, url) {
       body: JSON.stringify({ url, gotoOptions: { waitUntil: 'networkidle2', timeout: 25000 } })
     });
     if (r.status === 404) continue;
+    if (r.status === 429 && !retried) {
+      // 무료 플랜은 분당 요청 수가 적어서 연달아 부르면 막힘 → 잠깐 쉬고 한 번만 다시
+      const wait = Math.min(20, parseInt(r.headers.get('retry-after') || '10', 10) || 10);
+      await new Promise(res => setTimeout(res, wait * 1000));
+      return rendered(env, url, true);
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.success === false) throw new Error('브라우저 렌더링 실패: ' + JSON.stringify(j.errors || r.status).slice(0, 200));
     return typeof j.result === 'string' ? j.result : '';
@@ -152,13 +161,17 @@ async function rendered(env, url) {
   throw new Error('브라우저 렌더링 엔드포인트를 찾지 못했습니다');
 }
 
-async function discover(env, src, exclude) {
+async function discover(env, src, exclude, useRender) {
   try {
-    const res = await fetch(src.home, { headers: { 'user-agent': UA } });
-    if (!res.ok) return null;
-    const html = await readHtml(res);
+    let html = '', base = src.home;
+    if (useRender && canRender(env)) { try { html = await rendered(env, src.home); } catch {} }
+    if (!html) {
+      const res = await fetch(src.home, { headers: { 'user-agent': UA } });
+      if (!res.ok) return null;
+      html = await readHtml(res); base = res.url || src.home;
+    }
     const links = [...html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)]
-      .map(m => ({ href: abs(m[1], res.url || src.home), text: m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() }))
+      .map(m => ({ href: abs(m[1], base), text: m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() }))
       .filter(l => l.href && l.href.startsWith('http') && l.href !== exclude && /exhibit|전시|show/i.test(l.href + ' ' + l.text) && !/past|지난|archive|아카이브/i.test(l.href + ' ' + l.text));
     links.sort((a, b) => score(b) - score(a));
     return links[0]?.href || null;
@@ -266,10 +279,15 @@ ${text}`;
 }
 
 // 상세 페이지 여러 개를 한 번에 넘겨 기간·포스터를 뽑음
-async function extractDetails(env, src, pending) {
+async function extractDetails(env, src, pending, listViaRender) {
   const parts = [];
   for (const p of pending) {
-    const pg = await getPage(env, { ...src, render: false }, p.link); // 상세 페이지는 대개 정적이라 일반 요청으로
+    // 상세 페이지는 대개 정적이라 일반 요청 먼저, 거의 비어 있으면(자바스크립트 사이트) 렌더링
+    let pg = await getPage(env, { ...src, render: false }, p.link);
+    if (listViaRender && (!pg.ok || pg.text.length < 1500) && canRender(env)) {
+      const pr = await getPage(env, { ...src, render: true }, p.link);
+      if (pr.ok) pg = pr;
+    }
     if (pg.ok) parts.push(`===== 상세 페이지: ${p.link} (목록의 제목: ${p.title}) =====\n${pg.text.slice(0, 12000)}`);
   }
   if (!parts.length) return [];
