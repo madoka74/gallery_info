@@ -160,6 +160,19 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .locform .field{flex:1;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chips button{padding:5px 10px;border-radius:999px;background:var(--chip);font-size:12.5px}
+.pv{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--bg)}
+.pv label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.pv .pvres{font-size:13px;display:flex;flex-direction:column;gap:4px}
+.pv .pvres li{list-style:none}
+.pv .pvres ul{margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.pv .warn{color:var(--warn);font-size:12.5px}
+.pv .ok{color:var(--accent);font-size:12.5px;font-weight:600}
+.srow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding-block:8px;border-top:1px solid var(--line)}
+.srow:first-child{border-top:0}
+.srow small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow .bad{color:var(--warn)}
+details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
+.btn.sm{padding:6px 10px;font-size:12.5px}
 .offhead{padding-block:10px 4px;font-size:12px;color:var(--muted);letter-spacing:.06em;border-top:1px solid var(--line)}
 .nav{display:grid;grid-template-columns:repeat(4,1fr);padding-block:6px 8px;border-top:1px solid var(--line)}
 .nav button{display:flex;flex-direction:column;align-items:center;gap:2px;padding-block:6px;font-size:11.5px;color:var(--muted);position:relative}
@@ -559,6 +572,7 @@ function renderSettings(){
     <p class="note">지금 전시가 열려 있는 모든 공간입니다. 스위치를 끄면 근처 피드에서 빠지고 목록 맨 아래로 내려가요. 하트 탭은 이 순서를 따릅니다.</p>
     <ul class="vlist" id="vlist"><li class="note">공간 목록을 불러오는 중…</li></ul>
   </section>
+  <section class="sec" id="adminsec"></section>
   <section class="sec">
     <h3>데이터</h3>
     <p class="note" id="dstatus">${statusCache?statusText(statusCache):'상태 확인 중…'}</p>
@@ -566,6 +580,7 @@ function renderSettings(){
     <div><button class="btn ghost danger" data-reset>내 설정 초기화</button></div>
   </section>`;
   loadAll().then(renderVList).catch(err=>{const b=$('#vlist');if(b)b.innerHTML=`<li class="note">${esc(err.message)}</li>`});
+  renderAdmin();
   if(!statusCache)api('/api/status').then(s=>{statusCache=s;const p=$('#dstatus');if(p)p.textContent=statusText(s)}).catch(err=>{const p=$('#dstatus');if(p)p.textContent='서버 상태를 확인하지 못했어요: '+err.message});
 }
 function renderVList(){
@@ -589,6 +604,105 @@ function renderVList(){
 }
 function statusText(s){const t=new Date(s.updatedAt);return `마지막 갱신 ${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())} · 공간 ${s.venues}곳 · 전시 ${s.exhibitions}개`}
 const venueById=id=>(allVenues||[]).find(v=>v.id===id)||(S.prefs[id]&&S.prefs[id].v)||null;
+
+/* ---------- 공간 관리 (관리자): 홈페이지 주소로 추가 → 자동 진단 → 미리보기 → 등록 ---------- */
+const ADMIN_KEY='gakkaun-admin';
+let adminToken='';try{adminToken=localStorage.getItem(ADMIN_KEY)||''}catch(e){}
+async function adminApi(path,body){
+  const res=await fetch(API+path,{method:body?'POST':'GET',headers:{'content-type':'application/json','x-admin-token':adminToken},body:body?JSON.stringify(body):undefined});
+  let d;try{d=await res.json()}catch(e){throw new Error(`서버 응답을 읽지 못했어요 (${res.status})`)}
+  if(res.status===403)throw new Error('관리자 토큰이 맞지 않아요');
+  if(!res.ok)throw new Error(d.error||`서버 오류 (${res.status})`);
+  return d;
+}
+let pv=null,srcCache=[];
+function renderAdmin(){
+  const el=$('#adminsec');if(!el)return;
+  if(!adminToken){
+    el.innerHTML=`<h3>공간 관리</h3>
+      <p class="note">관리자 토큰(ADMIN_TOKEN)을 넣으면 홈페이지 주소로 전시공간을 추가하고 고칠 수 있어요. 토큰은 이 기기에만 저장돼요.</p>
+      <form class="locform" id="tokform"><input class="field" id="tokin" type="password" placeholder="관리자 토큰" autocomplete="off"><button class="btn ghost" type="submit">확인</button></form>`;
+    return;
+  }
+  el.innerHTML=`<h3>공간 관리</h3>
+    <form class="locform" id="addform"><input class="field" id="addurl" type="url" inputmode="url" placeholder="홈페이지 주소 (예: kukjegallery.com)" autocomplete="off"><button class="btn" type="submit">진단</button></form>
+    <p class="note">홈페이지를 읽어 이름·주소·전시 페이지를 찾고, 실제로 전시를 뽑아 보여줘요. 10~40초 걸려요.</p>
+    <div id="probebox"></div>
+    <details id="srcdetails"><summary>등록된 공간 <span class="mono" id="srccount">…</span></summary><div id="srclist"><p class="note">불러오는 중…</p></div></details>
+    <div><button class="btn ghost sm" data-act="admin-logout">이 기기에서 관리자 토큰 지우기</button></div>`;
+  renderProbe();loadSrcList();
+}
+async function loadSrcList(){
+  const box=$('#srclist');if(!box)return;
+  try{
+    const r=await adminApi('/api/admin/sources');srcCache=r.sources;
+    const c=$('#srccount');if(c)c.textContent=r.sources.length;
+    const sorted=r.sources.slice().sort((a,b)=>(a.status&&a.status.ok===false?0:1)-(b.status&&b.status.ok===false?0:1)||a.name.localeCompare(b.name,'ko'));
+    box.innerHTML=sorted.map(s=>{const st=s.status||{};const bad=st.ok===false;
+      const info=bad?`<span class="bad">${esc((st.error||'실패').slice(0,40))}</span>`:st.ok?`전시 ${st.count}개 · ${st.via==='render'?'렌더링':'일반'}`:'아직 수집 전';
+      return `<div class="srow"><div class="vtext"><strong>${esc(s.name)}</strong><small>${info} · ${esc((s.url||'').replace(/^https?:\/\//,'').slice(0,40))}</small></div>
+        <button class="btn ghost sm" data-srcedit="${esc(s.id)}">수정</button><button class="btn ghost sm danger" data-srcdel="${esc(s.id)}">삭제</button></div>`}).join('');
+  }catch(err){box.innerHTML=`<p class="note">${esc(err.message)}</p>`;if(/토큰/.test(err.message)){adminToken='';try{localStorage.removeItem(ADMIN_KEY)}catch(e){}renderAdmin()}}
+}
+function renderProbe(){
+  const box=$('#probebox');if(!box)return;
+  if(!pv){box.innerHTML='';return}
+  if(pv.loading){box.innerHTML=`<div class="pv"><span><span class="dots" style="display:inline-flex;gap:4px;margin-right:8px"><i style="width:5px;height:5px;border-radius:50%;background:var(--accent);display:block"></i></span>${esc(pv.loading)}</span></div>`;return}
+  const d=pv.draft,r=pv.result||{};
+  const brOpts=(pv.branches||[]).length?`<label>지점 (한 페이지에 여러 지점 전시가 섞여 있어요)<select class="field" id="pv-branch"><option value="">구분 없음</option>${pv.branches.map(b=>`<option${b===d.branch?' selected':''}>${esc(b)}</option>`).join('')}</select></label>`
+    :`<label>지점·관 구분 (필요할 때만, 예: 서울)<input class="field" id="pv-branch" value="${esc(d.branch||'')}"></label>`;
+  const items=(r.items||[]);
+  const resHTML=pv.result?(r.ok
+      ?`<div class="pvres"><span class="${items.length?'ok':'warn'}">전시 ${items.length}개 찾음 · ${r.via==='render'?'브라우저 렌더링으로 읽음':'일반 읽기'}${r.pending?` · 상세 페이지 ${r.pending}개 확인`:''}</span>
+         ${items.length?`<ul>${items.map(x=>`<li>· ${esc(x.title)} <span class="mono">${fmtDay(x.start).slice(5)}–${fmtDay(x.end).slice(5)}</span>${x.hall?` <small>${esc(x.hall)}</small>`:''}</li>`).join('')}</ul>`:'<span class="warn">전시를 찾지 못했어요. 전시 페이지 주소를 바꿔서 다시 시험해 보세요. 실제로 전시가 없는 기간일 수도 있어요.</span>'}</div>`
+      :`<div class="pvres"><span class="warn">전시 페이지를 열지 못했어요: ${esc(r.error||'')}</span></div>`):'';
+  box.innerHTML=`<div class="pv">
+    ${pv.mode==='edit'?'<strong>공간 수정</strong>':'<strong>진단 결과</strong>'}
+    ${pv.note?`<span class="note">${esc(pv.note)}</span>`:''}
+    <label>이름<input class="field" id="pv-name" value="${esc(d.name||'')}"></label>
+    <label>주소<input class="field" id="pv-addr" value="${esc(d.addr||'')}"></label>
+    <div class="note">위치: ${d.lat!=null?`<span class="mono">${(+d.lat).toFixed(5)}, ${(+d.lng).toFixed(5)}</span>${pv.geoName?` (${esc(pv.geoName)})`:''}`:'<span class="warn">못 찾음</span>'} · <button class="btn ghost sm" data-act="pv-geo">주소로 위치 찾기</button></div>
+    <label>전시 페이지<input class="field" id="pv-url" type="url" value="${esc(d.url||'')}"></label>
+    ${brOpts}
+    <label>다른 이름 (공공 데이터에서 쓰는 이름, 쉼표로 구분)<input class="field" id="pv-aliases" value="${esc((d.aliases||[]).join(', '))}"></label>
+    ${resHTML}
+    ${pv.dirty&&pv.result?'<span class="warn">설정을 바꿨어요. 다시 시험하면 바뀐 설정으로 결과를 확인할 수 있어요.</span>':''}
+    <div class="dlg-row"><button class="btn ghost" data-act="pv-test">이 설정으로 시험</button><button class="btn" data-act="pv-save">${pv.mode==='edit'?'저장':'등록'}</button><button class="btn ghost" data-act="pv-cancel">취소</button></div>
+  </div>`;
+}
+function readPv(){
+  const d=pv.draft;
+  d.name=$('#pv-name').value.trim();d.addr=$('#pv-addr').value.trim();d.url=$('#pv-url').value.trim();
+  d.branch=($('#pv-branch').value||'').trim();d.aliases=$('#pv-aliases').value.split(',').map(x=>x.trim()).filter(Boolean);
+  return d;
+}
+async function runProbe(body,label){
+  const keep=pv&&!pv.loading?pv:null;
+  pv={loading:label};renderProbe();
+  try{
+    const r=await adminApi('/api/admin/probe',body);
+    pv={draft:r.draft,result:r.result,branches:r.branches.length?r.branches:(keep?keep.branches:[]),note:r.note||(keep?keep.note:''),geoName:r.geoName,mode:keep?keep.mode:'new',dirty:false};
+  }catch(err){pv=keep?{...keep,dirty:true}:null;toast(err.message)}
+  renderProbe();
+}
+async function pvGeo(){
+  const d=readPv();if(!d.addr){toast('주소를 먼저 넣어 주세요');return}
+  try{const r=await api('/api/geocode?q='+encodeURIComponent(d.addr)+'&lat=37.5665&lng=126.978');
+    if(!r.places.length){toast('주소로 위치를 찾지 못했어요');return}
+    d.lat=r.places[0].lat;d.lng=r.places[0].lng;pv.geoName=r.places[0].name;renderProbe();
+  }catch(err){toast(err.message)}
+}
+async function pvSave(){
+  const d=readPv();
+  if(!d.name||!d.url){toast('이름과 전시 페이지를 넣어 주세요');return}
+  if(d.lat==null){toast('위치를 먼저 찾아 주세요 (주소로 위치 찾기)');return}
+  const useResult=pv.result&&pv.result.ok&&!pv.dirty&&pv.result.url===d.url;
+  try{
+    await adminApi('/api/admin/sources/save',{source:d,result:useResult?pv.result:null});
+    toast(useResult?`${d.name} 등록 완료`:`${d.name} 저장. 전시는 다음 수집 때 반영돼요`);
+    pv=null;renderProbe();loadSrcList();allVenues=null;near.dirty=true;statusCache=null;
+  }catch(err){toast(err.message)}
+}
 
 /* ---------- 상단 · 탭 ---------- */
 let tab='near';
@@ -717,6 +831,16 @@ document.addEventListener('click',ev=>{
   if(d.goto){show(d.goto);return}
   if(d.star){toggleStar(d.star);return}
   if(d.visit){toggleVisit(d.visit);return}
+  if(d.act==='admin-logout'){adminToken='';try{localStorage.removeItem(ADMIN_KEY)}catch(e){}pv=null;renderAdmin();return}
+  if(d.act==='pv-cancel'){pv=null;renderProbe();return}
+  if(d.act==='pv-geo'){pvGeo();return}
+  if(d.act==='pv-save'){pvSave();return}
+  if(d.act==='pv-test'){const x=readPv();if(!x.url){toast('전시 페이지 주소를 넣어 주세요');return}
+    runProbe({id:x.id,url:x.home||x.url,page:x.url,name:x.name||'(이름 미정)',addr:x.addr,lat:x.lat,lng:x.lng,branch:x.branch,aliases:x.aliases,render:x.render},'이 설정으로 전시를 뽑아 보는 중… (10~30초)');return}
+  if(d.srcedit){const s=srcCache.find(x=>x.id===d.srcedit);if(!s)return;
+    pv={draft:{id:s.id,name:s.name,addr:s.addr||'',lat:s.lat,lng:s.lng,home:s.home||s.url,url:s.url,branch:s.branch||'',render:!!s.render,aliases:s.aliases||[]},result:null,branches:[],note:s.status&&s.status.error?'최근 수집 오류: '+s.status.error:'',mode:'edit',dirty:false};
+    renderProbe();$('#probebox').scrollIntoView({block:'start'});return}
+  if(d.srcdel){armed(t,'삭제',async()=>{try{await adminApi('/api/admin/sources/delete',{id:d.srcdel});toast('삭제했어요');loadSrcList();allVenues=null;near.dirty=true}catch(err){toast(err.message)}});return}
   if(d.act==='visit-save'){saveVisitDate();return}
   if(d.act==='visit-remove'){removeVisit();return}
   if(d.act==='visit-close'){closeVisitDialog();return}
@@ -751,7 +875,12 @@ document.addEventListener('keydown',ev=>{
   if((ev.key==='Enter'||ev.key===' ')&&ev.target.dataset&&ev.target.dataset.stamp){ev.preventDefault();openVisitDialog(ev.target.dataset.stamp)}
 });
 document.addEventListener('input',ev=>{if(ev.target.id==='vq')renderVList()});
-document.addEventListener('submit',ev=>{if(ev.target.id==='locform'){ev.preventDefault();const q=($('#locq').value||'').trim();if(q)searchPlace(q)}});
+document.addEventListener('submit',ev=>{
+  if(ev.target.id==='locform'){ev.preventDefault();const q=($('#locq').value||'').trim();if(q)searchPlace(q)}
+  if(ev.target.id==='tokform'){ev.preventDefault();adminToken=($('#tokin').value||'').trim();try{localStorage.setItem(ADMIN_KEY,adminToken)}catch(e){}renderAdmin()}
+  if(ev.target.id==='addform'){ev.preventDefault();const u=($('#addurl').value||'').trim();if(!u)return;pv=null;runProbe({url:u},'홈페이지를 읽고 전시 페이지를 찾는 중… (10~40초)')}
+});
+document.addEventListener('input',ev=>{if(pv&&ev.target.id&&ev.target.id.startsWith('pv-'))pv.dirty=true});
 
 save();
 show((location.hash||'').slice(1)||'near');
