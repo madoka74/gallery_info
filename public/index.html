@@ -588,7 +588,7 @@ async function searchPlace(q){
   const box=$('#locres');if(!box)return;
   box.innerHTML='<li class="note">찾는 중…</li>';
   try{
-    const r=await api('/api/geocode?q='+encodeURIComponent(q));
+    const o=origin();const r=await api('/api/geocode?q='+encodeURIComponent(q)+`&lat=${o.lat}&lng=${o.lng}`);
     geoResults=r.places||[];
     box.innerHTML=geoResults.length?geoResults.map((pl,i)=>`<li class="arow"><div class="vtext"><strong>${esc(pl.name)}</strong>${pl.addr?`<small>${esc(pl.addr)}</small>`:''}</div><button class="btn ghost" data-place="${i}">선택</button></li>`).join('')
       :`<li class="note">‘${esc(q)}’를 찾지 못했어요. 동 이름이나 도로명 주소로 다시 입력해 보세요.</li>`;
