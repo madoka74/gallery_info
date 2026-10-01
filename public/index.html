@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8EBEA">
+<title>가까운 전시</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@700;800&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<style>
+/* Layout: one phone-width column. Snap-scrolling full-height cards: the poster hangs on a gallery-wall panel, a museum wall label sits underneath. */
+:root{
+  --bg:#E8EBEA; --surface:#FFFFFF; --wall:#DCE1DF; --fg:#14171A; --muted:#5C6568; --line:#D2D8D6; --chip:#F2F4F3;
+  --accent:#2C43CF; --accent-ink:#FFFFFF; --star:#C98A0C; --heart:#D2375A; --warn:#B4500F; --warn-bg:#FBEBDD; --soft:#E9ECFB;
+  --f-display:"Nanum Myeongjo","AppleMyungjo",serif;
+  --f-body:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1113; --surface:#191C1F; --wall:#212529; --fg:#ECEFEE; --muted:#9AA3A6; --line:#2C3135; --chip:#23272B;
+  --accent:#8A98FF; --accent-ink:#0D1030; --star:#F2B544; --heart:#FF6F89; --warn:#F5A35C; --warn-bg:#3A2614; --soft:#22264A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1113; --surface:#191C1F; --wall:#212529; --fg:#ECEFEE; --muted:#9AA3A6; --line:#2C3135; --chip:#23272B;
+  --accent:#8A98FF; --accent-ink:#0D1030; --star:#F2B544; --heart:#FF6F89; --warn:#F5A35C; --warn-bg:#3A2614; --soft:#22264A; color-scheme:dark}
+
+html{height:100%;box-sizing:border-box}
+*,*::before,*::after{box-sizing:inherit}
+body{height:100%;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.app{height:100%;max-width:480px;margin:0 auto;padding-inline:16px;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:12px 4px}
+.brand{font-family:var(--f-display);font-weight:800;font-size:21px;letter-spacing:-.02em;white-space:nowrap}
+.brand i{font-style:normal;color:var(--accent)}
+.ctx{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctx button{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--fg)}
+.ctx svg{width:14px;height:14px}
+.views{flex:1;min-height:0;position:relative}
+.view{position:absolute;inset:0}
+
+/* feed */
+.feed{overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
+.feed::-webkit-scrollbar{display:none}
+.card{height:calc(100% - 16px);margin-block:8px;scroll-snap-align:center;scroll-snap-stop:always;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
+.poster{flex:1 1 auto;min-height:150px;background:var(--wall);position:relative;display:flex;justify-content:center;padding:54px 20px 18px}
+.frame{height:100%;aspect-ratio:3/4;max-width:100%;background:var(--line);box-shadow:0 14px 28px rgba(0,0,0,.20),0 2px 5px rgba(0,0,0,.14)}
+.frame img{display:block;width:100%;height:100%;object-fit:cover}
+.ovl{position:absolute;inset:12px 12px auto 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:var(--surface);font-size:12px;color:var(--muted);white-space:nowrap}
+.chip b{color:var(--fg);font-weight:500}
+.icon-btn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--surface);flex:none}
+.icon-btn svg{width:20px;height:20px}
+[data-star] svg,[data-heart] svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}
+[data-star][aria-pressed="true"]{color:var(--star)}
+[data-star][aria-pressed="true"] svg{fill:currentColor}
+[data-heart][aria-pressed="true"]{color:var(--heart)}
+[data-heart][aria-pressed="true"] svg{fill:currentColor}
+
+.info{flex:0 0 auto;max-height:64%;overflow-y:auto;padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:12px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill.on{background:var(--soft);color:var(--accent)}
+.pill.closing{background:var(--warn-bg);color:var(--warn)}
+.pill.soon{border:1px dashed var(--muted);color:var(--fg);padding:2px 8px}
+.pill.ended{background:var(--chip);color:var(--muted)}
+.multi{margin-left:auto;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.title{margin:0;font-family:var(--f-display);font-weight:800;font-size:25px;line-height:1.22;letter-spacing:-.02em;text-wrap:balance}
+.sub{margin:4px 0 0;color:var(--muted);font-size:14px}
+.label{margin:0;display:grid;grid-template-columns:44px minmax(0,1fr);gap:7px 12px;font-size:13.5px;border-top:1px solid var(--line);padding-top:12px}
+.label dt{color:var(--muted);font-size:12px;letter-spacing:.06em;padding-top:1px}
+.label dd{margin:0;min-width:0}
+.place{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.place strong{font-weight:600;display:block}
+.place small{color:var(--muted);font-size:12px}
+.place .icon-btn{width:34px;height:34px;background:var(--chip);margin-top:-4px}
+.place .icon-btn svg{width:18px;height:18px}
+
+.loader{height:96px;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center}
+.loader .dots{display:inline-flex;gap:4px;margin-right:8px;vertical-align:middle}
+.loader .dots i{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:b 1s infinite ease-in-out}
+.loader .dots i:nth-child(2){animation-delay:.15s}.loader .dots i:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,80%,100%{opacity:.25}40%{opacity:1}}
+
+.empty{height:100%;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:12px;padding:0 8px}
+.empty h3{margin:0;font-family:var(--f-display);font-size:22px;font-weight:800}
+.empty p{margin:0;color:var(--muted);max-width:32ch}
+
+/* pages (MY, settings) */
+.page{overflow-y:auto;padding-block:8px 24px;scrollbar-width:thin}
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;margin-bottom:12px}
+.sec h3{margin:0;font-size:13px;letter-spacing:.06em;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
+.sec h3 .mono{color:var(--fg)}
+.note{margin:0;font-size:12.5px;color:var(--muted)}
+.seg{display:flex;background:var(--chip);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;padding:7px 4px;border-radius:8px;font-size:13px;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+.vlist,.alist,.mlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.vrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;align-items:center;gap:8px;padding-block:9px;border-top:1px solid var(--line)}
+.vrow:first-child{border-top:0}
+.vrow .icon-btn{width:34px;height:34px;background:var(--chip)}
+.vrow .icon-btn svg{width:18px;height:18px}
+.vtext{min-width:0}
+.vtext strong{display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vtext small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vrow.off .vtext{opacity:.5}
+.switch{position:relative;display:inline-block;width:40px;height:24px;border-radius:999px;cursor:pointer}
+.switch input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.switch .track{position:absolute;inset:0;border-radius:999px;background:var(--line);transition:background .15s}
+.switch .track::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.switch input:checked + .track{background:var(--accent)}
+.switch input:checked + .track::after{transform:translateX(16px)}
+.mv{display:flex;flex-direction:column}
+.mv button{width:28px;height:17px;display:grid;place-items:center;color:var(--muted)}
+.mv button:disabled{opacity:.25;cursor:default}
+.mv svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2}
+.del{height:30px;min-width:30px;border-radius:8px;display:grid;place-items:center;color:var(--muted);font-size:12px;padding-inline:6px}
+.del svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
+.del[data-armed]{background:var(--heart);color:var(--surface);font-weight:600}
+.field{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:14px}
+.arow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-block:8px;border-top:1px solid var(--line)}
+.arow:first-child{border-top:0}
+.btn{padding:7px 14px;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:600;white-space:nowrap}
+.btn.ghost{background:var(--chip);color:var(--fg)}
+.btn.danger[data-armed]{background:var(--heart);color:var(--surface)}
+
+.mgroup{font-size:12px;color:var(--muted);letter-spacing:.06em;margin:6px 4px 8px}
+.mlist{gap:8px;margin-bottom:16px}
+.mrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:left;width:100%}
+.thumb{width:54px;aspect-ratio:3/4;background:var(--wall);display:block;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.mtext{min-width:0;display:flex;flex-direction:column;gap:1px}
+.mtext strong{font-family:var(--f-display);font-weight:800;font-size:16px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mtext small{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mtext .mono{font-size:12px}
+.mlist.ended .mrow{opacity:.6}
+
+.nav{display:grid;grid-template-columns:repeat(4,1fr);padding-block:6px 8px;border-top:1px solid var(--line)}
+.nav button{display:flex;flex-direction:column;align-items:center;gap:2px;padding-block:6px;font-size:11.5px;color:var(--muted);position:relative}
+.nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}
+.nav button[aria-current="page"]{color:var(--fg);font-weight:600}
+.nav button[aria-current="page"] svg{stroke:var(--accent)}
+.nav .badge{position:absolute;top:2px;left:calc(50% + 8px);min-width:16px;height:16px;border-radius:8px;background:var(--star);color:var(--surface);font-size:10px;line-height:16px;padding:0 4px;font-family:var(--f-mono)}
+
+.sheet{position:fixed;inset:0;background:var(--bg);z-index:20;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+.sheet-in{height:100%;max-width:480px;margin:0 auto;padding-inline:16px;display:flex;flex-direction:column}
+.sheet-top{display:flex;justify-content:space-between;align-items:center;padding-block:10px 0}
+.sheet-body{flex:1;min-height:0}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:13px;z-index:30;max-width:calc(100% - 32px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .2s}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+.seg.wrap{flex-wrap:wrap}
+.seg.wrap button{flex:1 1 30%}
+.err{display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 16px;color:var(--fg);max-width:36ch}
+.ext{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">가까운 <i>전시</i></div>
+    <div class="ctx" id="ctx"></div>
+  </header>
+  <main class="views">
+    <section class="view feed" id="view-near" aria-label="근처 전시"></section>
+    <section class="view feed" id="view-heart" aria-label="하트 공간 전시" hidden></section>
+    <section class="view page" id="view-my" aria-label="MY" hidden></section>
+    <section class="view page" id="view-settings" aria-label="설정" hidden></section>
+  </main>
+  <nav class="nav" aria-label="탭">
+    <button data-tab="near" aria-current="page"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>근처</button>
+    <button data-tab="heart"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/></svg>하트</button>
+    <button data-tab="my"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.55 5.2 5.75.84-4.16 4.05.98 5.72L12 16.7l-5.12 2.7.98-5.72L3.7 9.64l5.75-.84z"/></svg>MY<span class="badge" id="mybadge" hidden></span></button>
+    <button data-tab="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>설정</button>
+  </nav>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-in">
+    <div class="sheet-top"><span class="ctx">MY에 담은 전시</span><button class="btn ghost" data-act="close">닫기</button></div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+/* ---------- 설정값 ---------- */
+// 페이지와 Worker가 같은 주소에서 돌면 비워 둡니다. 앱으로 옮길 때는 Worker 주소를 넣으세요.
+const API = '';
+const ORIGINS = {
+  gangnam:{name:'강남역',lat:37.4979,lng:127.0276},
+  sinsa:{name:'신사역',lat:37.5163,lng:127.0203},
+  jamsil:{name:'잠실역',lat:37.5133,lng:127.1001},
+  gwanghwamun:{name:'광화문역',lat:37.5710,lng:126.9768}
+};
+
+/* ---------- 상태 (이 브라우저에 저장) ---------- */
+const KEY='gakkaun-jeonsi-v2';
+const defaults = () => ({ origin:'gangnam', gps:null, scope:'all', sort:'distance', venues:[], hidden:[], stars:[] });
+let S; try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
+if(!S||!Array.isArray(S.venues)) S=defaults();
+const save = () => { try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} };
+
+/* ---------- 도우미 ---------- */
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const today=(()=>{const d=new Date();d.setHours(0,0,0,0);return d})();
+const D=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const days=(a,b)=>Math.round((b-a)/86400000);
+const WD='일월화수목금토';
+const md=d=>`${d.getMonth()+1}.${pad(d.getDate())}`;
+function period(e){
+  const a=D(e.start),b=D(e.end);
+  const l=`${a.getFullYear()}.${pad(a.getMonth()+1)}.${pad(a.getDate())}`;
+  const r=a.getFullYear()===b.getFullYear()?`${pad(b.getMonth()+1)}.${pad(b.getDate())}`:`${b.getFullYear()}.${pad(b.getMonth()+1)}.${pad(b.getDate())}`;
+  return `${l} – ${r}`;
+}
+function status(e){
+  const a=D(e.start),b=D(e.end);
+  if(b<today) return {kind:'ended',label:'종료',short:'종료'};
+  if(a>today){const n=days(today,a);return {kind:'soon',label:`${md(a)} 개막 · D-${n}`,short:`개막 D-${n}`}}
+  const n=days(today,b);
+  if(n===0) return {kind:'closing',label:'오늘 마감',short:'D-day'};
+  if(n<=7) return {kind:'closing',label:`마감 임박 · D-${n}`,short:`D-${n}`};
+  return {kind:'on',label:`진행 중 · D-${n}`,short:`D-${n}`};
+}
+const origin=()=> S.origin==='gps'&&S.gps ? {name:'현재 위치',...S.gps} : (ORIGINS[S.origin]||ORIGINS.gangnam);
+function dist(v){
+  const o=origin(),R=6371000,r=x=>x*Math.PI/180;
+  const h=Math.sin(r(v.lat-o.lat)/2)**2+Math.cos(r(o.lat))*Math.cos(r(v.lat))*Math.sin(r(v.lng-o.lng)/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+const fmtDist=m=>m<1000?`${Math.max(10,Math.round(m/10)*10)}m`:`${(m/1000).toFixed(1)}km`;
+const walkTxt=m=>{const min=Math.max(1,Math.round(m*1.25/75));return min<=40?`도보 ${min}분`:`대중교통 ${Math.max(10,Math.round(m/1000*3.2+8))}분`};
+const inList=id=>S.venues.find(v=>v.id===id);
+const isHidden=id=>S.hidden.some(h=>h.id===id);
+const slim=v=>({id:v.id,name:v.name,addr:v.addr||'',lat:v.lat,lng:v.lng});
+
+async function api(path,body){
+  const o=origin();
+  const res=await fetch(API+path,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({lat:o.lat,lng:o.lng,...body})}:{});
+  let data; try{ data=await res.json(); }catch(e){ throw new Error(`서버 응답을 읽지 못했어요 (${res.status})`); }
+  if(!res.ok) throw new Error(data.error||`서버 오류 (${res.status})`);
+  return data;
+}
+
+const ICON={
+  star:'<svg viewBox="0 0 24 24"><path d="M12 3.6l2.55 5.2 5.75.84-4.16 4.05.98 5.72L12 16.7l-5.12 2.7.98-5.72L3.7 9.64l5.75-.84z"/></svg>',
+  heart:'<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/></svg>',
+  up:'<svg viewBox="0 0 12 12"><path d="M2.5 7.5L6 4l3.5 3.5"/></svg>',
+  down:'<svg viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>',
+  x:'<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>',
+  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>'
+};
+
+/* ---------- 포스터: 실제 이미지 우선, 없거나 깨지면 자동 생성 ---------- */
+const PAL=[['#EDE7DC','#1D3FBB','#F05A28','#16161A'],['#101418','#F2C14E','#4FB0A5','#F4F1EC'],['#F4D9D0','#B8232F','#2B2D42','#1C1C22'],['#DDE7E3','#0F6E5C','#E9B44C','#13201C'],['#1E2A5A','#F7B2BD','#F2E8CF','#F5F2EA'],['#F2F0E9','#111111','#D7263D','#111111'],['#E7E0F0','#5B3E96','#F29E4C','#1E1530'],['#C9D6DF','#1E2022','#F5F5F5','#111317'],['#2C2A26','#C89F5D','#8BA6A9','#F1ECE2'],['#F6EFD9','#3E7CB1','#81A4CD','#0E2238']];
+const hash=s=>{let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0};
+const rng=seed=>()=>{seed=(seed+0x6D2B79F5)|0;let t=Math.imul(seed^(seed>>>15),1|seed);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296};
+const cv=document.createElement('canvas');cv.width=720;cv.height=960;const ctx=cv.getContext('2d');
+const SERIF='"Nanum Myeongjo", serif',MONO='"IBM Plex Mono", monospace',SANS='"IBM Plex Sans KR", sans-serif';
+function wrap(text,maxW){const lines=[];let line='';for(const word of text.split(' ')){const t=line?line+' '+word:word;if(ctx.measureText(t).width<=maxW){line=t;continue}if(line)lines.push(line);line='';for(const ch of word){if(ctx.measureText(line+ch).width>maxW){lines.push(line);line=ch}else line+=ch}}if(line)lines.push(line);return lines}
+function drawPoster(e,venueName){
+  const W=720,H=960,top=H*0.58,r=rng(hash(e.id+e.title)),[bg,a,b,ink]=PAL[Math.floor(r()*PAL.length)];
+  ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  ctx.save();ctx.beginPath();ctx.rect(0,0,W,top);ctx.clip();
+  const kind=Math.floor(r()*6);
+  if(kind===0){for(let i=0;i<3;i++){ctx.globalAlpha=i?0.88:1;ctx.fillStyle=i%2?b:a;ctx.beginPath();ctx.arc(W*(0.18+r()*0.64),top*(0.2+r()*0.65),W*(0.16+r()*0.26),0,Math.PI*2);ctx.fill()}}
+  else if(kind===1){ctx.translate(W/2,top/2);ctx.rotate(-0.8+r()*0.5);const sw=26+r()*40;let k=0;for(let x=-W;x<W;x+=sw*1.7,k++){ctx.fillStyle=k%3===0?b:a;ctx.fillRect(x,-W,sw,W*2)}}
+  else if(kind===2){const n=4+Math.floor(r()*2),s=W/n;for(let y=0;y<top;y+=s)for(let x=0;x<W;x+=s){const q=r();if(q<0.45)continue;ctx.fillStyle=r()<0.7?a:b;ctx.beginPath();if(q<0.65)ctx.arc(x+s/2,y+s/2,s*0.42,0,Math.PI*2);else if(q<0.85){ctx.moveTo(x,y);ctx.arc(x,y,s,0,Math.PI/2)}else ctx.rect(x+s*0.08,y+s*0.08,s*0.84,s*0.84);ctx.fill()}}
+  else if(kind===3){const cx=r()<0.5?0:W,cy=top*(0.85+r()*0.2);for(let k=9;k>0;k--){ctx.fillStyle=k%3===0?b:(k%3===1?a:bg);ctx.beginPath();ctx.arc(cx,cy,k*W/8,0,Math.PI*2);ctx.fill()}}
+  else if(kind===4){ctx.fillStyle=ink;ctx.fillRect(0,0,W,top);const split=(x,y,w,h,d)=>{if(d>3||w<140||h<140||(d>0&&r()<0.22)){const c=r();ctx.fillStyle=c<0.3?a:c<0.5?b:bg;ctx.fillRect(x+7,y+7,w-14,h-14);return}if(w>h){const s=w*(0.3+r()*0.4);split(x,y,s,h,d+1);split(x+s,y,w-s,h,d+1)}else{const s=h*(0.3+r()*0.4);split(x,y,w,s,d+1);split(x,y+s,w,h-s,d+1)}};split(-7,-7,W+14,top+7,0)}
+  else{ctx.fillStyle=b;ctx.fillRect(0,top*0.62,W,top*0.18);ctx.fillStyle=a;ctx.font=`800 ${Math.round(top*0.9)}px ${SERIF}`;ctx.fillText(e.title.trim()[0]||'展',W*0.05,top*0.95)}
+  ctx.restore();ctx.globalAlpha=1;
+  const L=48,maxW=W-96;ctx.fillStyle=ink;ctx.fillRect(L,top+30,maxW,3);
+  ctx.font=`500 21px ${MONO}`;ctx.fillText(`${e.genre||'전시'} · ${D(e.start).getFullYear()}`,L,top+68);
+  let size=62,lines;do{ctx.font=`800 ${size}px ${SERIF}`;lines=wrap(e.title,maxW);size-=6}while(lines.length>2&&size>36);
+  let y=top+68+size*1.25;lines.slice(0,3).forEach(l=>{ctx.fillText(l,L,y);y+=size*1.18});
+  ctx.font=`500 22px ${MONO}`;ctx.fillText(period(e).replace(/ – /,' — '),L,H-82);
+  ctx.font=`600 22px ${SANS}`;ctx.fillText(venueName||'',L,H-48);
+  return cv.toDataURL('image/jpeg',0.86);
+}
+const genCache=new Map(),queue=[];let busy=false;
+const withTimeout=(p,ms)=>Promise.race([p,new Promise(r=>setTimeout(r,ms))]);
+function generate(img){queue.push(img);pump()}
+function pump(){
+  if(busy||!queue.length)return;busy=true;
+  const img=queue.shift(),id=img.dataset.poster,rec=EX.get(id);
+  if(!rec){busy=false;return pump()}
+  const {e,v}=rec;
+  const loads=document.fonts?Promise.all([document.fonts.load(`800 60px ${SERIF}`,e.title),document.fonts.load(`500 22px ${MONO}`,'0123456789.— ·'),document.fonts.load(`600 22px ${SANS}`,v.name+(e.genre||''))]).catch(()=>{}):Promise.resolve();
+  withTimeout(loads,2500).then(()=>{
+    if(!genCache.has(id))genCache.set(id,drawPoster(e,v.name));
+    img.src=genCache.get(id);busy=false;requestAnimationFrame(pump);
+  });
+}
+function ensurePoster(img){
+  if(img.dataset.done)return;img.dataset.done='1';
+  const rec=EX.get(img.dataset.poster);if(!rec)return;
+  if(rec.e.poster){ img.onerror=()=>{img.onerror=null;img.removeAttribute('src');generate(img)}; img.referrerPolicy='no-referrer'; img.src=rec.e.poster; }
+  else generate(img);
+}
+const posterIO=new IntersectionObserver(ents=>ents.forEach(en=>{if(en.isIntersecting){ensurePoster(en.target);posterIO.unobserve(en.target)}}),{rootMargin:'120% 0px'});
+const observePosters=root=>root.querySelectorAll('img[data-poster]:not([data-done])').forEach(i=>posterIO.observe(i));
+
+/* ---------- 카드 ---------- */
+const EX=new Map(); // 전시 id → {e, v}
+function remember(e,v){EX.set(e.id,{e,v:slim(v)})}
+function cardHTML(e,v,meta={}){
+  const st=status(e),d=dist(v),lv=inList(v.id);
+  const starred=S.stars.some(s=>s.e.id===e.id),hearted=!!(lv&&lv.heart);
+  return `<article class="card" data-ex="${esc(e.id)}">
+    <div class="poster">
+      <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}"></div>
+      <div class="ovl">
+        <span class="chip mono">${meta.rank?`<b>${pad(meta.rank)}</b>·`:''} ${fmtDist(d)} · ${walkTxt(d)}</span>
+        <button class="icon-btn" data-star="${esc(e.id)}" aria-pressed="${starred}" aria-label="MY에 담기">${ICON.star}</button>
+      </div>
+    </div>
+    <div class="info">
+      <div class="meta"><span class="pill ${st.kind}">${st.label}</span><span>${esc(e.genre||'전시')}</span>${meta.total>1?`<span class="multi">이 공간 전시 ${meta.idx}/${meta.total}</span>`:''}</div>
+      <div><h2 class="title">${esc(e.title)}</h2>${e.sub?`<p class="sub">${esc(e.sub)}</p>`:''}</div>
+      <dl class="label">
+        ${e.artist?`<dt>작가</dt><dd>${esc(e.artist)}</dd>`:''}
+        <dt>기간</dt><dd class="mono">${period(e)}</dd>
+        <dt>장소</dt><dd class="place"><span><strong>${esc(v.name)}</strong>${v.addr?`<small>${esc(v.addr)}</small>`:''}</span><button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${hearted}" aria-label="선호 공간으로 하트">${ICON.heart}</button></dd>
+        ${e.fee?`<dt>관람</dt><dd>${esc(e.fee)}</dd>`:''}
+        ${e.link?`<dt>정보</dt><dd><a class="ext" href="${esc(e.link)}" target="_blank" rel="noopener">자세히 보기</a></dd>`:''}
+      </dl>
+    </div>
+  </article>`;
+}
+function venueCards(venues,startRank,withRank){
+  let html='';
+  venues.forEach((v,i)=>{v.ex.forEach((e,j)=>{remember(e,v);html+=cardHTML(e,v,{rank:withRank?startRank+i+1:0,idx:j+1,total:v.ex.length})})});
+  return html;
+}
+// 피드에서 만난 공간은 설정 목록에 자동 등록 (숨긴 공간 제외)
+function register(venues){
+  let changed=false;
+  venues.forEach(v=>{const cur=inList(v.id);if(cur){Object.assign(cur,slim(v));}else if(!isHidden(v.id)){S.venues.push({...slim(v),heart:false,on:true});changed=true}});
+  if(changed)save();
+}
+
+/* ---------- 근처 피드: 서버에서 공간 10곳씩 ---------- */
+const near={el:$('#view-near'),page:0,hasMore:true,loading:false,total:0,shown:0,sentinel:null,dirty:true,error:null};
+const nearIO=new IntersectionObserver(ents=>{if(ents.some(en=>en.isIntersecting))loadMore()},{root:near.el,rootMargin:'0px 0px 150% 0px'});
+function feedQuery(){
+  const off=S.venues.filter(v=>!v.on).map(v=>v.id);
+  return S.scope==='list'
+    ? {only:S.venues.filter(v=>v.on).map(v=>v.id),exclude:S.hidden.map(h=>h.id)}
+    : {exclude:[...S.hidden.map(h=>h.id),...off]};
+}
+function resetNear(){
+  near.dirty=false;near.page=0;near.hasMore=true;near.loading=false;near.total=0;near.shown=0;near.error=null;
+  near.el.innerHTML='';near.el.scrollTop=0;
+  near.sentinel=document.createElement('div');near.sentinel.className='loader';near.el.appendChild(near.sentinel);
+  nearIO.disconnect();nearIO.observe(near.sentinel);
+  loadMore();
+}
+async function loadMore(){
+  if(near.loading||!near.hasMore)return;
+  near.loading=true;
+  near.sentinel.innerHTML=`<span><span class="dots"><i></i><i></i><i></i></span>${near.page?'다음 공간 10곳 불러오는 중':'가까운 전시를 찾는 중'}</span>`;
+  try{
+    const res=await api('/api/feed',{page:near.page,...feedQuery()});
+    near.page++;near.hasMore=res.hasMore;near.total=res.total;
+    if(!res.venues.length&&near.page===1){
+      near.el.innerHTML=S.scope==='list'
+        ?`<div class="empty"><h3>목록에 있는 공간에 열린 전시가 없어요</h3><p>설정에서 근처 검색 범위를 ‘전체 공간’으로 바꾸거나 공간을 추가해 보세요.</p><button class="btn" data-goto="settings">설정 열기</button></div>`
+        :`<div class="empty"><h3>근처에 열린 전시가 없어요</h3><p>기준 위치를 바꾸거나, 꺼 둔 공간을 다시 켜 보세요.</p><button class="btn" data-goto="settings">설정 열기</button></div>`;
+      updateTop();return;
+    }
+    register(res.venues);
+    near.sentinel.insertAdjacentHTML('beforebegin',venueCards(res.venues,near.shown,true));
+    near.shown+=res.venues.length;
+    observePosters(near.el);
+    near.sentinel.innerHTML=near.hasMore?'':`<span>${esc(origin().name)} 근처 공간 ${near.total}곳을 모두 봤어요</span>`;
+    updateTop();
+  }catch(err){
+    near.error=err.message;
+    near.sentinel.innerHTML=`<div class="err"><span>${esc(err.message)}</span><button class="btn ghost" data-act="retry">다시 시도</button></div>`;
+  }finally{near.loading=false}
+  // 받은 양이 적어 끝이 여전히 가까우면 이어서
+  if(near.hasMore&&!near.error){const fr=near.el.getBoundingClientRect(),sr=near.sentinel.getBoundingClientRect();if(sr.top-fr.bottom<fr.height*1.5)loadMore()}
+}
+
+/* ---------- 하트 피드 ---------- */
+function settingsOrder(){
+  const list=S.venues.slice();
+  if(S.sort==='distance')list.sort((a,b)=>dist(a)-dist(b));
+  else if(S.sort==='name')list.sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  return list;
+}
+let heartInfo={venues:0,count:0},heartSeq=0;
+async function renderHearts(){
+  const el=$('#view-heart'),seq=++heartSeq;
+  const hv=settingsOrder().filter(v=>v.heart);
+  heartInfo={venues:hv.length,count:0};updateTop();
+  if(!hv.length){el.innerHTML=`<div class="empty"><h3>하트한 공간이 없어요</h3><p>카드의 장소 옆 하트나 설정의 공간 목록에서 좋아하는 전시공간을 표시하면 여기에 모입니다.</p><button class="btn" data-goto="settings">공간 고르기</button></div>`;return}
+  el.innerHTML=`<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span>하트 공간 ${hv.length}곳의 전시를 불러오는 중</span></div>`;
+  try{
+    const res=await api('/api/venues',{ids:hv.map(v=>v.id)});
+    if(seq!==heartSeq)return;
+    register(res.venues);
+    const withEx=res.venues.filter(v=>v.ex.length);
+    const n=withEx.reduce((a,v)=>a+v.ex.length,0);
+    heartInfo={venues:hv.length,count:n};updateTop();
+    el.innerHTML=n
+      ?venueCards(withEx,0,true)+`<div class="loader">하트 공간 ${hv.length}곳 · 전시 ${n}개 · 설정의 정렬 순서</div>`
+      :`<div class="empty"><h3>지금은 열린 전시가 없어요</h3><p>하트한 공간 ${hv.length}곳에 진행 중이거나 예정된 전시가 없습니다.</p></div>`;
+    el.scrollTop=0;observePosters(el);
+  }catch(err){
+    if(seq!==heartSeq)return;
+    el.innerHTML=`<div class="empty"><h3>불러오지 못했어요</h3><p>${esc(err.message)}</p><button class="btn" data-act="retry-heart">다시 시도</button></div>`;
+  }
+}
+
+/* ---------- MY: 담은 전시는 스냅샷으로 저장 ---------- */
+function renderMy(){
+  const el=$('#view-my');
+  const items=S.stars.slice().sort((a,b)=>D(a.e.end)-D(b.e.end)||D(a.e.start)-D(b.e.start));
+  items.forEach(s=>remember(s.e,s.v));
+  const live=items.filter(s=>D(s.e.end)>=today),done=items.filter(s=>D(s.e.end)<today);
+  const row=({e,v})=>{const st=status(e),b=D(e.end);return `<li><button class="mrow" data-open="${esc(e.id)}">
+    <span class="thumb"><img alt="" data-poster="${esc(e.id)}"></span>
+    <span class="mtext"><strong>${esc(e.title)}</strong><small>${esc(v.name)}</small><span class="mono">~ ${b.getFullYear()}.${pad(b.getMonth()+1)}.${pad(b.getDate())} (${WD[b.getDay()]})</span></span>
+    <span class="pill ${st.kind}">${st.short}</span></button></li>`};
+  if(!items.length){el.innerHTML=`<div class="empty"><h3>담은 전시가 없어요</h3><p>카드 오른쪽 위의 별을 누르면 종료일이 가까운 순서로 여기에 모입니다.</p><button class="btn" data-goto="near">근처 전시 보기</button></div>`;return}
+  el.innerHTML=`<div class="mgroup">종료일 빠른 순 · ${live.length}</div><ul class="mlist">${live.map(row).join('')}</ul>`
+    +(done.length?`<div class="mgroup">끝난 전시 · ${done.length}</div><ul class="mlist ended">${done.map(row).join('')}</ul>`:'');
+  el.querySelectorAll('img[data-poster]').forEach(ensurePoster);
+}
+
+/* ---------- 설정 ---------- */
+let statusCache=null;
+function renderSettings(){
+  const el=$('#view-settings'),q=$('#addq')?.value||'',list=settingsOrder();
+  el.innerHTML=`
+  <section class="sec">
+    <h3>기준 위치</h3>
+    <div class="seg wrap" role="group" aria-label="기준 위치">${Object.entries(ORIGINS).map(([k,o])=>`<button data-origin="${k}" aria-pressed="${S.origin===k}">${o.name}</button>`).join('')}<button data-act="gps" aria-pressed="${S.origin==='gps'}">내 위치</button></div>
+    <p class="note">${S.origin==='gps'?'마지막으로 받은 기기 위치를 씁니다. ‘내 위치’를 다시 누르면 새로 받아요.':'역을 기준점으로 씁니다. ‘내 위치’를 누르면 기기 위치를 씁니다.'}</p>
+  </section>
+  <section class="sec">
+    <h3>근처 검색 범위</h3>
+    <div class="seg" role="group" aria-label="검색 범위">
+      <button data-scope="all" aria-pressed="${S.scope==='all'}">전체 공간</button>
+      <button data-scope="list" aria-pressed="${S.scope==='list'}">내 목록만</button>
+    </div>
+    <p class="note">${S.scope==='all'?'API에 있는 모든 공간을 거리순으로 봅니다. 스위치를 끈 공간과 숨긴 공간은 빠집니다.':'아래 목록에서 스위치가 켜진 공간만 봅니다.'}</p>
+  </section>
+  <section class="sec">
+    <h3>전시공간 <span class="mono">${S.venues.length}</span></h3>
+    <div class="seg" role="group" aria-label="정렬">
+      <button data-sort="distance" aria-pressed="${S.sort==='distance'}">거리순</button>
+      <button data-sort="name" aria-pressed="${S.sort==='name'}">이름순</button>
+      <button data-sort="custom" aria-pressed="${S.sort==='custom'}">직접 정렬</button>
+    </div>
+    <p class="note">근처 피드에서 본 공간이 자동으로 쌓입니다. 하트 탭은 이 순서를 따릅니다. ×는 목록에서 빼고 피드에서도 숨깁니다.</p>
+    ${list.length?`<ul class="vlist">${list.map((v,i)=>`
+      <li class="vrow${v.on?'':' off'}">
+        <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${v.heart}" aria-label="${esc(v.name)} 하트">${ICON.heart}</button>
+        <div class="vtext"><strong>${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span>${v.addr?` · ${esc(v.addr)}`:''}</small></div>
+        <label class="switch"><input type="checkbox" id="on-${esc(v.id)}" data-on="${esc(v.id)}" ${v.on?'checked':''}><span class="track"></span><span class="sr">${esc(v.name)} 근처 검색에 포함</span></label>
+        ${S.sort==='custom'?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===list.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
+        <button class="del" data-del="${esc(v.id)}" aria-label="${esc(v.name)} 목록에서 빼기">${ICON.x}</button>
+      </li>`).join('')}</ul>`:`<p class="note">아직 등록된 공간이 없어요. 근처 탭을 둘러보거나 아래에서 검색해 추가하세요.</p>`}
+  </section>
+  <section class="sec">
+    <h3>공간 추가</h3>
+    <input class="field" id="addq" type="search" placeholder="공간 이름이나 구 이름 (예: 시립, 강남구)" autocomplete="off" value="${esc(q)}">
+    <ul class="alist" id="alist"></ul>
+  </section>
+  ${S.hidden.length?`<section class="sec"><h3>숨긴 공간 <span class="mono">${S.hidden.length}</span></h3><ul class="alist">${S.hidden.map(h=>`<li class="arow"><div class="vtext"><strong>${esc(h.name)}</strong></div><button class="btn ghost" data-unhide="${esc(h.id)}">다시 보기</button></li>`).join('')}</ul></section>`:''}
+  <section class="sec">
+    <h3>데이터</h3>
+    <p class="note" id="dstatus">${statusCache?statusText(statusCache):'상태 확인 중…'}</p>
+    <p class="note">출처: 한국문화정보원 문화포털, 서울특별시 서울 열린데이터광장 (공공누리 제1유형)</p>
+    <div><button class="btn ghost danger" data-reset>내 설정 초기화</button></div>
+  </section>`;
+  renderAdd();
+  if(!statusCache)api('/api/status').then(s=>{statusCache=s;const p=$('#dstatus');if(p)p.textContent=statusText(s)}).catch(err=>{const p=$('#dstatus');if(p)p.textContent='서버 상태를 확인하지 못했어요: '+err.message});
+}
+function statusText(s){const t=new Date(s.updatedAt);return `마지막 갱신 ${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())} · 공간 ${s.venues}곳 · 전시 ${s.exhibitions}개`}
+let addT,addSeq=0;
+function renderAdd(){
+  const box=$('#alist');if(!box)return;
+  const q=($('#addq').value||'').trim();
+  if(!q){box.innerHTML='<li class="note">두 글자 이상 입력하면 API에 있는 공간을 찾아요.</li>';return}
+  if(q.length<2)return;
+  clearTimeout(addT);
+  addT=setTimeout(async()=>{
+    const seq=++addSeq;box.innerHTML='<li class="note">찾는 중…</li>';
+    try{
+      const res=await api('/api/search?q='+encodeURIComponent(q)+`&lat=${origin().lat}&lng=${origin().lng}`);
+      if(seq!==addSeq)return;
+      res.venues.forEach(v=>v.ex.forEach(e=>remember(e,v)));
+      searchCache=new Map(res.venues.map(v=>[v.id,v]));
+      box.innerHTML=res.venues.length?res.venues.map(v=>`<li class="arow"><div class="vtext"><strong>${esc(v.name)}</strong><small><span class="mono">${fmtDist(v.distance)}</span> · 열린 전시 ${v.ex.length}개${v.addr?` · ${esc(v.addr)}`:''}</small></div>${inList(v.id)?'<span class="note">목록에 있음</span>':`<button class="btn" data-add="${esc(v.id)}">추가</button>`}</li>`).join('')
+        :`<li class="note">‘${esc(q)}’에 맞는 공간이 없어요. 공공 API에 등록되지 않은 공간일 수 있어요.</li>`;
+    }catch(err){if(seq===addSeq)box.innerHTML=`<li class="note">${esc(err.message)}</li>`}
+  },300);
+}
+let searchCache=new Map();
+
+/* ---------- 상단 · 탭 ---------- */
+let tab='near';
+function updateTop(){
+  const c=$('#ctx');
+  const liveStars=S.stars.filter(s=>D(s.e.end)>=today).length;
+  const b=$('#mybadge');b.hidden=!liveStars;b.textContent=liveStars;
+  if(tab==='near')c.innerHTML=`<button data-goto="settings">${ICON.pin}${esc(origin().name)} 기준</button>${near.total?`<span class="mono">${near.shown}/${near.total}곳</span>`:''}`;
+  else if(tab==='heart')c.innerHTML=`<span>하트 공간 <span class="mono">${heartInfo.venues}</span>곳 · 전시 <span class="mono">${heartInfo.count}</span></span>`;
+  else if(tab==='my')c.innerHTML=`<span>담은 전시 <span class="mono">${S.stars.length}</span></span>`;
+  else c.innerHTML=`<span>공간 <span class="mono">${S.venues.length}</span>곳 · 하트 <span class="mono">${S.venues.filter(v=>v.heart).length}</span></span>`;
+}
+function show(t){
+  if(!['near','heart','my','settings'].includes(t))t='near';
+  tab=t;
+  document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+t);
+  document.querySelectorAll('.nav button').forEach(b=>{if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  if(t==='near'&&near.dirty)resetNear();
+  if(t==='heart')renderHearts();
+  if(t==='my')renderMy();
+  if(t==='settings')renderSettings();
+  updateTop();
+  try{history.replaceState(null,'','#'+t)}catch(e){}
+}
+
+/* ---------- 동작 ---------- */
+let toastT;
+function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,1800)}
+function toggleStar(id){
+  const i=S.stars.findIndex(s=>s.e.id===id),on=i<0;
+  if(on){const rec=EX.get(id);if(!rec)return;S.stars.push({e:rec.e,v:rec.v})}else S.stars.splice(i,1);
+  save();
+  document.querySelectorAll(`[data-star="${CSS.escape(id)}"]`).forEach(b=>b.setAttribute('aria-pressed',on));
+  toast(on?'MY에 담았어요':'MY에서 뺐어요');updateTop();
+}
+function findVenue(id){
+  for(const {v} of EX.values())if(v.id===id)return v;
+  return searchCache.get(id)||null;
+}
+function toggleHeart(id){
+  let s=inList(id);
+  if(!s){const v=findVenue(id);if(!v)return;s={...slim(v),heart:false,on:true};S.venues.push(s);S.hidden=S.hidden.filter(h=>h.id!==id)}
+  s.heart=!s.heart;save();
+  document.querySelectorAll(`[data-heart="${CSS.escape(id)}"]`).forEach(b=>b.setAttribute('aria-pressed',s.heart));
+  toast(`${s.name} · ${s.heart?'하트 공간으로 표시':'하트 해제'}`);updateTop();
+}
+function armed(btn,label,fn){
+  if(btn.dataset.armed!==undefined){fn();return}
+  const prev=btn.innerHTML;btn.dataset.armed='';btn.textContent=label;
+  setTimeout(()=>{if(btn.isConnected){delete btn.dataset.armed;btn.innerHTML=prev}},3000);
+}
+function openSheet(id){
+  const rec=EX.get(id);if(!rec)return;
+  const body=$('#sheet-body');body.innerHTML=cardHTML(rec.e,rec.v);
+  body.querySelectorAll('img[data-poster]').forEach(ensurePoster);
+  $('#sheet').hidden=false;
+}
+function closeSheet(){$('#sheet').hidden=true;$('#sheet-body').innerHTML='';if(tab==='my')renderMy();updateTop()}
+function locate(btn){
+  if(!navigator.geolocation){toast('이 브라우저는 위치를 지원하지 않아요');return}
+  btn.textContent='찾는 중…';
+  navigator.geolocation.getCurrentPosition(p=>{
+    S.gps={lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)};S.origin='gps';save();near.dirty=true;renderSettings();updateTop();toast('현재 위치 기준으로 바꿨어요');
+  },err=>{renderSettings();toast(err.code===1?'위치 권한이 거부됐어요. 브라우저 설정에서 허용해 주세요':'위치를 받지 못했어요')},{enableHighAccuracy:false,timeout:10000,maximumAge:300000});
+}
+
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest('button');if(!t)return;
+  const d=t.dataset;
+  if(d.tab){show(d.tab);return}
+  if(d.goto){show(d.goto);return}
+  if(d.star){toggleStar(d.star);return}
+  if(d.heart){toggleHeart(d.heart);if(tab==='settings')renderSettings();return}
+  if(d.open){openSheet(d.open);return}
+  if(d.act==='close'){closeSheet();return}
+  if(d.act==='retry'){near.error=null;loadMore();return}
+  if(d.act==='retry-heart'){renderHearts();return}
+  if(d.act==='gps'){locate(t);return}
+  if(d.origin){S.origin=d.origin;save();near.dirty=true;renderSettings();updateTop();toast(`${origin().name} 기준으로 바꿨어요`);return}
+  if(d.scope){S.scope=d.scope;save();near.dirty=true;renderSettings();return}
+  if(d.sort){
+    if(d.sort==='custom'&&S.sort!=='custom'){const ord=settingsOrder().map(v=>v.id);S.venues.sort((a,b)=>ord.indexOf(a.id)-ord.indexOf(b.id))}
+    S.sort=d.sort;save();renderSettings();return;
+  }
+  if(d.move){const i=S.venues.findIndex(v=>v.id===d.move),j=i+Number(d.dir);if(j<0||j>=S.venues.length)return;[S.venues[i],S.venues[j]]=[S.venues[j],S.venues[i]];save();renderSettings();$(`[data-move="${CSS.escape(d.move)}"][data-dir="${d.dir}"]`)?.focus();return}
+  if(d.del){armed(t,'숨기기',()=>{const v=inList(d.del);S.venues=S.venues.filter(x=>x.id!==d.del);if(v&&!isHidden(v.id))S.hidden.push({id:v.id,name:v.name});save();near.dirty=true;renderSettings();updateTop();toast(`${v?v.name:'공간'} · 숨김`)});return}
+  if(d.unhide){S.hidden=S.hidden.filter(h=>h.id!==d.unhide);save();near.dirty=true;renderSettings();toast('다시 피드에 나와요');return}
+  if(d.add){const v=searchCache.get(d.add);if(!v)return;S.hidden=S.hidden.filter(h=>h.id!==v.id);S.venues.push({...slim(v),heart:false,on:true});save();near.dirty=true;renderSettings();updateTop();toast(`${v.name} 추가됨`);return}
+  if(d.reset!==undefined){armed(t,'한 번 더 누르면 초기화',()=>{S=defaults();save();near.dirty=true;renderSettings();updateTop();toast('처음 상태로 되돌렸어요')});return}
+});
+document.addEventListener('change',ev=>{
+  const t=ev.target;if(!t.dataset||!t.dataset.on)return;
+  const s=inList(t.dataset.on);s.on=t.checked;save();near.dirty=true;t.closest('.vrow').classList.toggle('off',!s.on);
+});
+document.addEventListener('input',ev=>{if(ev.target.id==='addq')renderAdd()});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!$('#sheet').hidden)closeSheet()});
+
+show((location.hash||'').slice(1)||'near');
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,21 @@
+name = "gakkaun-jeonsi"
+main = "src/index.js"
+# 2024-09-02 이후 날짜면 서울 API의 8088 포트로 그대로 요청이 나갑니다 (allow_custom_ports 기본값)
+compatibility_date = "2026-09-01"
+
+# public/ 폴더의 화면(index.html)을 같은 주소에서 함께 제공
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# 정리된 전시 데이터를 담아 두는 KV. id는 `npx wrangler kv namespace create CACHE` 결과로 바꿔 넣으세요.
+[[kv_namespaces]]
+binding = "CACHE"
+id = "여기에_KV_ID"
+
+# 6시간마다 두 API에서 새로 받아 KV를 갱신 (UTC 기준 0, 6, 12, 18시)
+[triggers]
+crons = ["0 */6 * * *"]
+
+[observability]
+enabled = true
