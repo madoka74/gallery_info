@@ -522,7 +522,7 @@ function show(t){
   if(t==='near'&&near.dirty)resetNear();
   if(t==='heart')renderHearts();
   if(t==='my')renderMy();
-  if(t==='settings')renderSettings();
+  if(t==='settings'){allVenues=null;statusCache=null;renderSettings();}
   updateTop();
   try{history.replaceState(null,'','#'+t)}catch(e){}
 }
