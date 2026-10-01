@@ -11,7 +11,7 @@
 //   GEMINI_API_KEY  홈페이지에서 전시 목록을 뽑는 Gemini 키
 //   CF_ACCOUNT_ID, CF_API_TOKEN  (선택) 자바스크립트로 그려지는 페이지를 읽는 브라우저 렌더링용
 
-import { crawlBatch, crawlItems, crawlStatus } from './crawl.js';
+import { crawlBatch, crawlItems, crawlStatus, peek } from './crawl.js';
 
 // 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
 // from~to는 '기간이 겹치는' 항목을 돌려줌. 정상 resultCode는 00.
@@ -55,7 +55,7 @@ async function route(url, req, env, ctx) {
   const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
   const q = k => body[k] ?? url.searchParams.get(k);
 
-  if (['/api/refresh', '/api/debug', '/api/crawl', '/api/sources'].includes(p) && !isAdmin(url, env)) return json({ error: 'token이 맞지 않습니다' }, 403);
+  if (['/api/refresh', '/api/debug', '/api/crawl', '/api/sources', '/api/peek'].includes(p) && !isAdmin(url, env)) return json({ error: 'token이 맞지 않습니다' }, 403);
   if (p === '/api/refresh') {
     // 공공 API 다시 받기 + 데이터 다시 묶기 (홈페이지 수집은 /api/crawl)
     await refreshApis(env);
@@ -67,6 +67,10 @@ async function route(url, req, env, ctx) {
     const report = await crawlBatch(env, { id: url.searchParams.get('id') || undefined, force: url.searchParams.get('force') === '1' });
     const stats = await rebuild(env);
     return json({ ok: true, report, stats });
+  }
+  if (p === '/api/peek') {
+    // ?id=daelim&render=1 (또는 &url=다른주소) → 수집기가 읽은 텍스트와 링크를 그대로 보여줌
+    return json(await peek(env, url.searchParams.get('id'), { render: url.searchParams.get('render') === '1', url: url.searchParams.get('url') || undefined }));
   }
   if (p === '/api/sources') {
     const list = await crawlStatus(env);

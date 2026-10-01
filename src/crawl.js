@@ -63,6 +63,23 @@ export async function crawlStatus(env) {
   });
 }
 
+// 점검용: 한 공간의 페이지가 어떻게 읽히는지 그대로 보여줌 (Gemini 호출 없음)
+export async function peek(env, id, opts = {}) {
+  const src = SOURCES.find(s => s.id === id);
+  if (!src && !opts.url) throw new Error('없는 id입니다: ' + id);
+  const base = src || { id: 'adhoc', name: '', addr: '', home: opts.url };
+  const url = opts.url || src.url;
+  const page = await getPage(env, { ...base, render: !!opts.render }, url);
+  const links = [...new Set((page.text || '').match(/\[LINK [^\]]+\]/g) || [])].map(x => x.slice(6, -1));
+  return {
+    id, url, ok: page.ok, via: page.via, error: page.error || '', renderError: page.renderError || '',
+    textLength: (page.text || '').length,
+    exhibitionLinks: links.filter(l => /exhibit|전시|show|program/i.test(l)).slice(0, 40),
+    otherLinks: links.filter(l => !/exhibit|전시|show|program/i.test(l)).slice(0, 40),
+    text: (page.text || '').slice(0, 6000)
+  };
+}
+
 /* ---------- 한 공간 ---------- */
 async function crawlOne(env, src, prev, force) {
   if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY 비밀값이 없습니다');
