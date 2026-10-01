@@ -10,6 +10,7 @@
 //   ADMIN_TOKEN     관리용 주소(/api/refresh 등) 비밀번호
 //   GEMINI_API_KEY  홈페이지에서 전시 목록을 뽑는 Gemini 키
 //   CF_ACCOUNT_ID, CF_API_TOKEN  (선택) 자바스크립트로 그려지는 페이지를 읽는 브라우저 렌더링용
+//   KAKAO_REST_KEY  (선택) 기준 위치 검색용 카카오 로컬 API 키. 없으면 OpenStreetMap으로 검색
 
 import { crawlBatch, crawlItems, crawlStatus, peek } from './crawl.js';
 
@@ -21,7 +22,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.9';
+const VERSION = '2026-10-02.10';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -80,6 +81,12 @@ async function route(url, req, env, ctx) {
   }
   if (p === '/api/debug') {
     return new Response(await debugRaw(url.searchParams.get('src'), env), { headers: { 'content-type': 'text/plain; charset=utf-8', ...cors() } });
+  }
+
+  if (p === '/api/geocode') {
+    const term = String(q('q') || '').trim().slice(0, 80);
+    if (!term) return json({ places: [] });
+    return json({ places: await geocode(env, term) });
   }
 
   const ds = await getDataset(env, ctx);
@@ -141,6 +148,38 @@ async function route(url, req, env, ctx) {
 
 function withActive(v, today, lat, lng) {
   return { ...v, distance: Math.round(haversine(lat, lng, v.lat, v.lng)), ex: v.ex.filter(e => e.end >= today).sort((a, b) => a.start.localeCompare(b.start)) };
+}
+
+/* ---------------- 주소·지명 → 좌표 ---------------- */
+// KAKAO_REST_KEY가 있으면 카카오 로컬 API(국내 장소·주소에 가장 정확), 없으면 OpenStreetMap Nominatim
+async function geocode(env, term) {
+  const ck = 'geo:' + term;
+  const cached = await env.CACHE.get(ck, 'json');
+  if (cached) return cached;
+  let places = [];
+  if (env.KAKAO_REST_KEY) {
+    const h = { authorization: `KakaoAK ${env.KAKAO_REST_KEY}` };
+    const [kw, ad] = await Promise.all([
+      fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?size=6&query=${encodeURIComponent(term)}`, { headers: h }).then(r => r.json()).catch(() => ({})),
+      fetch(`https://dapi.kakao.com/v2/local/search/address.json?size=3&query=${encodeURIComponent(term)}`, { headers: h }).then(r => r.json()).catch(() => ({}))
+    ]);
+    places = [
+      ...(ad.documents || []).map(d => ({ name: d.address_name, addr: d.road_address?.address_name || '', lat: +d.y, lng: +d.x })),
+      ...(kw.documents || []).map(d => ({ name: d.place_name, addr: d.road_address_name || d.address_name || '', lat: +d.y, lng: +d.x }))
+    ];
+  } else {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=kr&limit=6&accept-language=ko&q=${encodeURIComponent(term)}`,
+      { headers: { 'user-agent': 'GakkaunJeonsi/1.0 (exhibition finder; low volume)' } });
+    if (!r.ok) throw new Error('장소 검색 서버가 응답하지 않아요 (' + r.status + ')');
+    const list = await r.json();
+    places = list.map(d => {
+      const parts = String(d.display_name || '').split(',').map(x => x.trim());
+      return { name: d.name || parts[0], addr: parts.slice(1, 4).reverse().join(' '), lat: +d.lat, lng: +d.lon };
+    });
+  }
+  places = places.filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng)).slice(0, 8);
+  await env.CACHE.put(ck, JSON.stringify(places), { expirationTtl: 7 * 86400 });
+  return places;
 }
 
 /* ---------------- dataset ---------------- */
