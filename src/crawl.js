@@ -54,12 +54,34 @@ const isTransient = msg => /^Gemini (429|5\d\d)|HTTP (5\d\d)|연결 실패|timed
 export async function crawlItems(env) {
   const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
   const out = [];
-  for (const src of SOURCES) {
-    for (const e of state[src.id]?.items || []) {
-      out.push({ ...e, id: `w-${src.id}-${e.id}`, src: 'crawl', srcId: src.id, aliases: src.aliases || [], place: src.name, addr: src.addr, lat: src.lat, lng: src.lng });
+  // 한 페이지를 여러 공간이 나눠 읽는 경우(예술의전당 3관, 국립현대미술관 서울·덕수궁, 대림·디뮤지엄)
+  // 같은 전시가 두 공간에 동시에 들어가지 않도록, 전시장소 표기를 보고 한 공간에만 배정
+  const groups = new Map();
+  for (const src of SOURCES) { const k = src.url; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(src); }
+  for (const srcs of groups.values()) {
+    const picked = new Map(); // 제목 → {src, item, score}
+    for (const src of srcs) for (const e of state[src.id]?.items || []) {
+      const k = tkey(e.title);
+      const score = hallScore(e.hall, src);
+      const prev = picked.get(k);
+      if (!prev || score > prev.score) picked.set(k, { src, e, score });
     }
+    for (const { src, e } of picked.values())
+      out.push({ ...e, id: `w-${src.id}-${e.id}`, src: 'crawl', srcId: src.id, aliases: src.aliases || [], place: src.name, addr: src.addr, lat: src.lat, lng: src.lng });
   }
   return out;
+}
+const tkey = t => String(t || '').replace(/[\s《》〈〉<>「」『』“”"'\[\]():·\-–—~,.!?]/g, '').toLowerCase();
+// 전시장소 표기가 이 공간 이름(별칭 포함)을 얼마나 길게 담고 있는지. 표기가 없으면 0
+function hallScore(hall, src) {
+  const h = tkey(hall).replace(/예술의전당/g, '');
+  if (!h) return 0;
+  let best = 0;
+  for (const n of [src.name, ...(src.aliases || [])]) {
+    const k = tkey(n).replace(/예술의전당/g, '');
+    if (k.length >= 2 && h.includes(k)) best = Math.max(best, k.length);
+  }
+  return best;
 }
 
 export async function crawlStatus(env) {
@@ -317,7 +339,8 @@ const SCHEMA = {
           end: { type: 'STRING', description: '종료일 YYYY-MM-DD. 페이지에 기간이 없으면 빈 문자열' },
           poster: { type: 'STRING', description: '이 전시의 대표 이미지 URL. 텍스트의 [IMG ...]에 있는 주소 그대로. 없으면 빈 문자열' },
           link: { type: 'STRING', description: '이 전시 상세 페이지 URL. 텍스트의 [LINK ...]에 있는 주소 그대로. 없으면 빈 문자열' },
-          fee: { type: 'STRING', description: '관람료. 없으면 빈 문자열' }
+          fee: { type: 'STRING', description: '관람료. 없으면 빈 문자열' },
+          hall: { type: 'STRING', description: '페이지에 적힌 전시장소(관·전시실) 이름 그대로. 없으면 빈 문자열' }
         },
         required: ['title', 'start', 'end', 'link']
       }
@@ -416,7 +439,8 @@ export function clean(list, text, today) {
       id: 'w' + hashStr(title + start),
       title, sub: String(x.subtitle || '').trim(), artist: String(x.artists || '').trim(),
       start, end, fee: String(x.fee || '').trim(), genre: '전시',
-      poster: inText(String(x.poster || '').trim()), link: inText(String(x.link || '').trim())
+      poster: inText(String(x.poster || '').trim()), link: inText(String(x.link || '').trim()),
+      hall: String(x.hall || '').trim()
     });
   }
   return { items: out, pending };
