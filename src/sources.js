@@ -17,13 +17,13 @@ export const SOURCES = [
   { id: 'artsonje', name: '아트선재센터', addr: '종로구 율곡로3길 87', lat: 37.5795, lng: 126.9813, home: 'https://artsonje.org', url: 'https://artsonje.org/exhibition/' },
   { id: 'kumho', name: '금호미술관', addr: '종로구 삼청로 18', lat: 37.5768, lng: 126.9812, home: 'http://www.kumhomuseum.com', url: 'http://www.kumhomuseum.com' },
   { id: 'ilmin', name: '일민미술관', addr: '종로구 세종대로 152', lat: 37.5703, lng: 126.9771, home: 'https://ilmin.org', url: 'https://ilmin.org' },
-  { id: 'sungkok', name: '성곡미술관', addr: '종로구 경희궁1가길 42', lat: 37.5713, lng: 126.9688, home: 'https://www.sungkokmuseum.org', url: 'https://www.sungkokmuseum.org' },
+  { id: 'sungkok', name: '성곡미술관', addr: '종로구 경희궁1가길 42', lat: 37.5713, lng: 126.9688, home: 'http://www.sungkokmuseum.org', url: 'http://www.sungkokmuseum.org' },
   { id: 'songeun', name: '송은', addr: '강남구 도산대로 441', lat: 37.5245, lng: 127.0461, home: 'https://songeun.or.kr', url: 'https://songeun.or.kr' },
   { id: 'platforml', name: '플랫폼엘', addr: '강남구 언주로133길 11', lat: 37.5163, lng: 127.0352, home: 'https://www.platform-l.org', url: 'https://www.platform-l.org' },
   { id: 'spacec', name: '코리아나미술관 스페이스씨', addr: '강남구 언주로 827', lat: 37.5236, lng: 127.0326, home: 'http://www.spacec.co.kr', url: 'http://www.spacec.co.kr' },
   { id: 'posco', name: '포스코미술관', addr: '강남구 테헤란로 440', lat: 37.5059, lng: 127.0557, home: 'https://www.poscoartmuseum.org', url: 'https://www.poscoartmuseum.org' },
   { id: 'lotte', name: '롯데뮤지엄', addr: '송파구 올림픽로 300 롯데월드타워 7층', lat: 37.5126, lng: 127.1025, home: 'https://www.lottemuseum.com', url: 'https://www.lottemuseum.com' },
-  { id: 'myart', name: '마이아트뮤지엄', addr: '강남구 테헤란로 518', lat: 37.5085, lng: 127.0610, home: 'https://www.myartmuseum.co.kr', url: 'https://www.myartmuseum.co.kr' },
+  { id: 'mamuone', name: '마이아트뮤지엄 원그로브', addr: '강서구 공항대로 165 원그로브 C동 2층', lat: 37.5606, lng: 126.8310, home: 'https://www.mamuone.com', url: 'https://www.mamuone.com/7' },
   { id: 'horim', name: '호림박물관 신사분관', addr: '강남구 도산대로 317', lat: 37.5223, lng: 127.0365, home: 'http://www.horimmuseum.org', url: 'http://www.horimmuseum.org', branch: '신사분관' },
   { id: 'kmca', name: 'K현대미술관', addr: '강남구 선릉로 807', lat: 37.5256, lng: 127.0400, home: 'http://www.kmcaseoul.org', url: 'http://www.kmcaseoul.org' },
   { id: 'groundseesaw', name: '그라운드시소 성수', addr: '성동구 아차산로 19', lat: 37.5440, lng: 127.0560, home: 'https://groundseesaw.co.kr', url: 'https://groundseesaw.co.kr', branch: '성수점' },
@@ -38,7 +38,7 @@ export const SOURCES = [
   { id: 'pkm', name: 'PKM 갤러리', addr: '종로구 삼청로7길 40', lat: 37.5823, lng: 126.9819, home: 'https://www.pkmgallery.com', url: 'https://www.pkmgallery.com' },
   { id: 'leeahn', name: '리안갤러리 서울', addr: '종로구 창성동', lat: 37.5795, lng: 126.9757, home: 'http://www.leeahngallery.com', url: 'http://www.leeahngallery.com', branch: '서울 (대구 제외)' },
   { id: 'sun', name: '선화랑', addr: '종로구 인사동5길 8', lat: 37.5729, lng: 126.9852, home: 'http://www.sungallery.co.kr', url: 'http://www.sungallery.co.kr' },
-  { id: 'gana', name: '가나아트센터', addr: '종로구 평창30길 28', lat: 37.6046, lng: 126.9587, home: 'https://www.ganaart.com', url: 'https://www.ganaart.com', branch: '평창동 가나아트센터' },
+  { id: 'gana', name: '가나아트센터', addr: '종로구 평창30길 28', lat: 37.6046, lng: 126.9587, home: 'http://www.ganaart.com', url: 'http://www.ganaart.com', branch: '평창동 가나아트센터' },
 
   // ---- 갤러리: 한남·이태원 ----
   { id: 'ropac', name: '타데우스 로팍 서울', addr: '용산구 한남대로 122', lat: 37.5355, lng: 127.0060, home: 'https://ropac.net', url: 'https://ropac.net/exhibitions/', branch: 'Seoul' },
@@ -55,6 +55,6 @@ export const SOURCES = [
   { id: 'koenig', name: '쾨닉 서울', addr: '강남구 압구정로 412', lat: 37.5253, lng: 127.0451, home: 'https://www.koeniggalerie.com', url: 'https://www.koeniggalerie.com', branch: 'Seoul' },
   { id: 'gladstone', name: '글래드스톤 서울', addr: '강남구 청담동', lat: 37.5249, lng: 127.0495, home: 'https://www.gladstonegallery.com', url: 'https://www.gladstonegallery.com/exhibitions', branch: 'Seoul' },
   { id: 'tang', name: '탕 컨템포러리 아트 서울', addr: '강남구 청담동', lat: 37.5248, lng: 127.0440, home: 'https://www.tangcontemporary.com', url: 'https://www.tangcontemporary.com', branch: 'Seoul' },
-  { id: 'yehwa', name: '예화랑', addr: '강남구 신사동', lat: 37.5245, lng: 127.0400, home: 'http://www.yehwarang.com', url: 'http://www.yehwarang.com' },
+  { id: 'yehwa', name: '예화랑', addr: '강남구 신사동', lat: 37.5245, lng: 127.0400, home: 'https://www.galleryyeh.com', url: 'https://www.galleryyeh.com' },
   { id: 'thepage', name: '더페이지갤러리', addr: '성동구 성수동', lat: 37.5446, lng: 127.0560, home: 'https://thepagegallery.com', url: 'https://thepagegallery.com' }
 ];

@@ -9,7 +9,9 @@ import { SOURCES } from './sources.js';
 export const CRAWL_KEY = 'crawl:v1';
 const UA = 'Mozilla/5.0 (compatible; GakkaunJeonsiBot/1.0; exhibition listings, once a day)';
 const RECHECK_MS = 20 * 3600e3;   // 하루에 한 번
-const MAX_TEXT = 60000;           // Gemini에 넘기는 텍스트 상한 (글자)
+const MAX_TEXT = 25000;           // Gemini에 넘기는 텍스트 상한 (글자). 무료 할당량(분당 토큰)을 고려해 작게
+const RETRY_MS = 60 * 60e3;       // 일시적 실패(할당량 초과, 서버 오류)는 1시간 뒤 다시
+const GEMINI_GAP_MS = 4000;       // Gemini 호출 사이 간격
 const DETAIL_MAX = 6;             // 목록에 기간이 없을 때 열어 볼 상세 페이지 수
 const EXTRACT_VER = 3;            // 추출 방식이 바뀌면 올림 → 페이지가 그대로여도 다시 추출
 
@@ -17,24 +19,29 @@ const EXTRACT_VER = 3;            // 추출 방식이 바뀌면 올림 → 페�
 export async function crawlBatch(env, opts = {}) {
   const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
   const now = Date.now();
+  const dueAt = st => st?.nextAt ?? ((st?.checkedAt || 0) + RECHECK_MS);
   let targets;
   if (opts.id) targets = SOURCES.filter(s => s.id === opts.id);
   else {
     const n = Math.max(1, parseInt(env.CRAWL_BATCH || '4', 10));
-    targets = SOURCES
-      .filter(s => !state[s.id] || now - (state[s.id].checkedAt || 0) > RECHECK_MS)
-      .sort((a, b) => (state[a.id]?.checkedAt || 0) - (state[b.id]?.checkedAt || 0))
+    targets = SOURCES.filter(s => !state[s.id] || dueAt(state[s.id]) <= now)
+      .sort((a, b) => dueAt(state[a.id]) - dueAt(state[b.id]))
       .slice(0, n);
   }
   const report = [];
+  let quotaHit = false;
   for (const src of targets) {
     const prev = state[src.id] || {};
+    if (quotaHit) { report.push({ id: src.id, name: src.name, skipped: 'Gemini 할당량 초과로 다음에 다시' }); continue; }
     try {
       const r = await crawlOne(env, src, prev, opts.force);
-      state[src.id] = { ...r, checkedAt: Date.now(), ok: true, error: '' };
+      state[src.id] = { ...r, checkedAt: Date.now(), nextAt: Date.now() + RECHECK_MS, ok: true, error: '' };
     } catch (e) {
-      // 실패해도 지난번 결과는 유지
-      state[src.id] = { ...prev, checkedAt: Date.now(), ok: false, error: String(e.message || e).slice(0, 300) };
+      const msg = String(e.message || e).slice(0, 300);
+      const transient = isTransient(msg);
+      if (/^Gemini 429/.test(msg)) quotaHit = true;
+      // 실패해도 지난번 결과는 유지. 일시적 실패는 1시간 뒤, 나머지는 하루 뒤 다시
+      state[src.id] = { ...prev, checkedAt: Date.now(), nextAt: Date.now() + (transient ? RETRY_MS : RECHECK_MS), ok: false, error: msg, transient };
     }
     const s = state[src.id];
     report.push({ id: src.id, name: src.name, ok: s.ok, count: (s.items || []).length, detailPages: s.pending || 0, via: s.via, changed: s.changed, url: s.url, error: s.error, renderError: s.renderError || '' });
@@ -42,6 +49,7 @@ export async function crawlBatch(env, opts = {}) {
   await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
   return report;
 }
+const isTransient = msg => /^Gemini (429|5\d\d)|HTTP (5\d\d)|연결 실패|timed? ?out|렌더링 실패/i.test(msg);
 
 export async function crawlItems(env) {
   const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
@@ -59,7 +67,8 @@ export async function crawlStatus(env) {
   return SOURCES.map(s => {
     const st = state[s.id] || {};
     return { id: s.id, name: s.name, ok: st.ok ?? null, count: (st.items || []).length, via: st.via || '', url: st.url || s.url,
-      checkedAt: st.checkedAt ? new Date(st.checkedAt).toISOString() : null, error: st.error || '', renderError: st.renderError || '' };
+      checkedAt: st.checkedAt ? new Date(st.checkedAt).toISOString() : null, nextAt: st.nextAt ? new Date(st.nextAt).toISOString() : null,
+      error: st.error || '', retrySoon: !!st.transient, renderError: st.renderError || '' };
   });
 }
 
@@ -83,7 +92,8 @@ export async function peek(env, id, opts = {}) {
 /* ---------- 한 공간 ---------- */
 async function crawlOne(env, src, prev, force) {
   if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY 비밀값이 없습니다');
-  let url = prev.url || src.url;
+  // sources.js에서 주소를 바꿨으면 예전에 찾아 둔 주소 대신 새 주소부터
+  let url = (prev.srcUrl === src.url && prev.url) || src.url;
   let page = await getPage(env, src, url);
 
   // 페이지가 없어졌으면 홈에서 '전시' 링크를 찾아 다시 시도
@@ -94,7 +104,7 @@ async function crawlOne(env, src, prev, force) {
   if (!page.ok) throw new Error(page.error);
 
   const hash = await sha1(page.text);
-  if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items?.length) return { ...prev, url, via: page.via, changed: false };
+  if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items?.length) return { ...prev, url, srcUrl: src.url, via: page.via, changed: false };
 
   let renderError = page.renderError || '';
   let r = await extract(env, src, page.text, url);
@@ -123,7 +133,7 @@ async function crawlOne(env, src, prev, force) {
     const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
     items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
   }
-  return { url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError };
+  return { url, srcUrl: src.url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError };
 }
 
 /* ---------- 페이지 받기 ---------- */
@@ -136,12 +146,35 @@ async function getPage(env, src, url) {
     try { return { ok: true, via: 'render', text: htmlToText(await rendered(env, url), url) }; }
     catch (e) { renderError = String(e.message || e).slice(0, 200); } // 실패하면 일반 요청으로
   }
-  let res;
-  try { res = await fetch(url, { headers: { 'user-agent': UA, accept: 'text/html,*/*', 'accept-language': 'ko,en;q=0.8' }, redirect: 'follow' }); }
-  catch (e) { return { ok: false, error: '연결 실패: ' + e.message }; }
-  if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, renderError };
-  const html = await readHtml(res);
-  return { ok: true, via: 'html', text: htmlToText(html, res.url || url), renderError };
+  let last = '';
+  // 인증서 오류(526)·서버 오류(52x)·연결 실패면 http/https, www 유무를 바꿔 다시
+  for (const u of urlVariants(url)) {
+    let res;
+    try { res = await fetch(u, { headers: { 'user-agent': UA, accept: 'text/html,*/*', 'accept-language': 'ko,en;q=0.8' }, redirect: 'follow' }); }
+    catch (e) { last = '연결 실패: ' + e.message; continue; }
+    if (res.ok) {
+      const html = await readHtml(res);
+      return { ok: true, via: 'html', text: htmlToText(html, res.url || u), renderError };
+    }
+    last = `HTTP ${res.status}`;
+    if (res.status < 500) break; // 4xx는 주소를 바꿔도 같음
+  }
+  // 봇 요청만 막는 사이트(403/404)는 실제 브라우저로 한 번 더
+  if (/HTTP 40[34]/.test(last) && !src.render && canRender(env)) {
+    try { return { ok: true, via: 'render', text: htmlToText(await rendered(env, url), url) }; }
+    catch (e) { renderError = String(e.message || e).slice(0, 200); }
+  }
+  return { ok: false, error: last, renderError };
+}
+function urlVariants(url) {
+  const out = [url];
+  try {
+    const u = new URL(url);
+    const flipProto = new URL(url); flipProto.protocol = u.protocol === 'https:' ? 'http:' : 'https:';
+    const flipWww = new URL(url); flipWww.hostname = u.hostname.startsWith('www.') ? u.hostname.slice(4) : 'www.' + u.hostname;
+    out.push(flipProto.href, flipWww.href);
+  } catch {}
+  return [...new Set(out)];
 }
 
 async function readHtml(res) {
@@ -157,21 +190,26 @@ async function readHtml(res) {
   catch { return new TextDecoder('utf-8').decode(buf); }
 }
 
-async function rendered(env, url, retried) {
+async function rendered(env, url, retried, gentle) {
   for (const path of ['browser-run', 'browser-rendering']) {
+    // gentle: 페이지가 스스로 이동(리다이렉트)하는 사이트용. 로드 후 잠깐 기다렸다 읽음
+    const opts = gentle
+      ? { url, gotoOptions: { waitUntil: 'load', timeout: 25000 }, waitForTimeout: 4000 }
+      : { url, gotoOptions: { waitUntil: 'networkidle2', timeout: 25000 } };
     const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/${path}/content`, {
       method: 'POST',
       headers: { authorization: `Bearer ${env.CF_API_TOKEN}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ url, gotoOptions: { waitUntil: 'networkidle2', timeout: 25000 } })
+      body: JSON.stringify(opts)
     });
     if (r.status === 404) continue;
     if (r.status === 429 && !retried) {
       // 무료 플랜은 분당 요청 수가 적어서 연달아 부르면 막힘 → 잠깐 쉬고 한 번만 다시
       const wait = Math.min(20, parseInt(r.headers.get('retry-after') || '10', 10) || 10);
       await new Promise(res => setTimeout(res, wait * 1000));
-      return rendered(env, url, true);
+      return rendered(env, url, true, gentle);
     }
     const j = await r.json().catch(() => ({}));
+    if ((!r.ok || j.success === false) && !gentle && /execution context|navigation/i.test(JSON.stringify(j.errors || ''))) return rendered(env, url, retried, true);
     if (!r.ok || j.success === false) throw new Error('브라우저 렌더링 실패: ' + JSON.stringify(j.errors || r.status).slice(0, 200));
     return typeof j.result === 'string' ? j.result : '';
   }
@@ -246,6 +284,9 @@ export function htmlToText(html, base) {
   h = h.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
        .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&amp;/g, '&');
   h = h.replace(/[ \t\f\r]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{2,}/g, '\n').trim();
+  // 메뉴·푸터처럼 반복되는 짧은 줄은 한 번만 (토큰 절약)
+  const seen = new Set();
+  h = h.split('\n').filter(line => { if (line.length > 40) return true; if (seen.has(line)) return false; seen.add(line); return true; }).join('\n');
   return h.slice(0, MAX_TEXT);
 }
 function abs(u, base) { try { return new URL(String(u).replace(/&amp;/g, '&').trim(), base).href; } catch { return ''; } }
@@ -305,7 +346,7 @@ async function extractDetails(env, src, pending, listViaRender) {
       const pr = await getPage(env, { ...src, render: true }, p.link);
       if (pr.ok) pg = pr;
     }
-    if (pg.ok) parts.push(`===== 상세 페이지: ${p.link} (목록의 제목: ${p.title}) =====\n${pg.text.slice(0, 12000)}`);
+    if (pg.ok) parts.push(`===== 상세 페이지: ${p.link} (목록의 제목: ${p.title}) =====\n${pg.text.slice(0, 8000)}`);
   }
   if (!parts.length) return [];
   const today = kstToday();
@@ -321,7 +362,11 @@ ${text}`;
   return clean(await gemini(env, prompt), text + pending.map(p => p.link).join(' '), today).items;
 }
 
+let lastGemini = 0;
 async function gemini(env, prompt) {
+  const wait = lastGemini + GEMINI_GAP_MS - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastGemini = Date.now();
   const model = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
