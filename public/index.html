@@ -178,6 +178,16 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .srow .bad{color:var(--warn)}
 details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
 .btn.sm{padding:6px 10px;font-size:12.5px}
+.rhead{display:flex;align-items:center;gap:8px;width:100%;padding:13px 2px;border-top:1px solid var(--line);text-align:left;font-size:15px;font-weight:600;color:var(--fg)}
+.vlist>li.rgrp:first-child .rhead{border-top:0}
+.rhead .car{width:16px;height:16px;flex:none;transition:transform .15s;color:var(--muted)}
+.rhead[aria-expanded="true"] .car{transform:rotate(90deg)}
+.rhead .cnt{font-family:var(--f-mono);font-size:12.5px;font-weight:400;color:var(--muted)}
+.rhead .ncnt{margin-left:auto;font-family:var(--f-mono);font-size:11.5px;font-weight:700;letter-spacing:.06em;color:#fff;background:#FF2D55;border-radius:999px;padding:3px 8px}
+.rgrp>ul{list-style:none;margin:0 0 6px;padding:0 0 0 4px}
+.vrow.isnew{grid-template-columns:auto auto minmax(0,1fr) auto auto}
+.vnew{font-family:var(--f-mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#fff;background:#FF2D55;border-radius:5px;padding:3px 5px;transition:opacity .5s}
+.vnew.gone{opacity:0}
 .offhead{padding-block:10px 4px;font-size:12px;color:var(--muted);letter-spacing:.06em;border-top:1px solid var(--line)}
 .nav{display:grid;grid-template-columns:repeat(4,1fr);padding-block:6px 8px;border-top:1px solid var(--line)}
 .nav button{display:flex;flex-direction:column;align-items:center;gap:2px;padding-block:6px;font-size:11.5px;color:var(--muted);position:relative}
@@ -211,7 +221,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
     <button data-tab="near" aria-current="page"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>근처</button>
     <button data-tab="heart"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/></svg>하트<span class="badge new" id="heartbadge" hidden></span></button>
     <button data-tab="my"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.55 5.2 5.75.84-4.16 4.05.98 5.72L12 16.7l-5.12 2.7.98-5.72L3.7 9.64l5.75-.84z"/></svg>MY<span class="badge" id="mybadge" hidden></span></button>
-    <button data-tab="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>설정</button>
+    <button data-tab="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>설정<span class="badge new" id="setbadge" hidden></span></button>
   </nav>
 </div>
 
@@ -303,6 +313,51 @@ const isHeart=id=>!!(S.prefs[id]&&S.prefs[id].heart);
 const isOn=id=>!(S.prefs[id]&&S.prefs[id].on===false);
 function setPref(v,patch){const p=S.prefs[v.id]||(S.prefs[v.id]={heart:false,on:true});Object.assign(p,patch);p.v=slim(v);save();return p}
 const slim=v=>({id:v.id,name:v.name,addr:v.addr||'',lat:v.lat,lng:v.lng});
+/* 지역: 주소 앞머리로, 없으면 좌표로 (서울 공간은 주소에 '서울'이 빠진 경우가 많음) */
+const REGIONS=[
+  {n:'서울',re:/^서울/},
+  {n:'경기·인천',re:/^(경기|인천)/,pts:[[37.27,127.01],[37.45,126.70],[37.74,127.05],[37.66,126.78],[37.2,127.5],[37.0,127.2]]},
+  {n:'강원',re:/^강원/,pts:[[37.88,127.73],[37.75,128.9],[37.34,127.92],[37.45,129.16]]},
+  {n:'대전·세종·충청',re:/^(대전|세종|충북|충남|충청)/,pts:[[36.35,127.38],[36.64,127.49],[36.81,127.15],[36.5,126.8],[36.48,127.29]]},
+  {n:'광주·전라',re:/^(광주|전북|전남|전라|전남광주)/,pts:[[35.16,126.85],[35.82,127.15],[34.81,126.39],[34.95,127.70]]},
+  {n:'대구·경북',re:/^(대구|경북|경상북)/,pts:[[35.87,128.60],[35.85,129.22],[36.02,129.36],[36.57,128.73]]},
+  {n:'부산·울산·경남',re:/^(부산|울산|경남|경상남)/,pts:[[35.18,129.07],[35.54,129.31],[35.23,128.68],[35.18,128.10]]},
+  {n:'제주',re:/^제주/,pts:[[33.45,126.55],[33.25,126.56]]}
+];
+function regionOf(v){
+  const a=String(v.addr||'').trim();
+  for(const r of REGIONS)if(r.re.test(a))return r.n;
+  if(!isFinite(v.lat))return '기타';
+  if(v.lat>37.42&&v.lat<37.71&&v.lng>126.76&&v.lng<127.19)return '서울';
+  let best='기타',bd=1e9;
+  for(const r of REGIONS)for(const [la,ln] of r.pts||[]){const d=(la-v.lat)**2+((ln-v.lng)*0.8)**2;if(d<bd){bd=d;best=r.n}}
+  return best;
+}
+/* 새로 들어온 공간: 설정 목록에서 화면에 보인 뒤 NEW가 사라짐 */
+S.vseen=S.vseen||[];
+const vseenSet=new Set(S.vseen);
+const isNewV=v=>!!(v&&v.firstSeen&&v.firstSeen>S.since&&!vseenSet.has(v.id));
+function updateSetBadge(){
+  const n=(allVenues||[]).filter(isNewV).length;
+  const b=$('#setbadge');if(b){b.hidden=!n;b.textContent=n}
+}
+let vseenSaveT;
+function markVenueSeen(id){
+  if(!id||vseenSet.has(id))return;
+  vseenSet.add(id);S.vseen=[...vseenSet].slice(-3000);
+  clearTimeout(vseenSaveT);vseenSaveT=setTimeout(save,400);
+  updateSetBadge();paintRegionCounts();
+}
+const vTimers=new Map();
+const vIO=new IntersectionObserver(ents=>ents.forEach(en=>{
+  const li=en.target;
+  if(en.isIntersecting&&en.intersectionRatio>=0.9){
+    if(!vTimers.has(li))vTimers.set(li,setTimeout(()=>{
+      markVenueSeen(li.dataset.vid);vIO.unobserve(li);
+      const tag=li.querySelector('.vnew');if(tag){setTimeout(()=>tag.classList.add('gone'),1200)}
+    },900));
+  }else{clearTimeout(vTimers.get(li));vTimers.delete(li)}
+}),{threshold:[0,0.9]});
 
 async function api(path,body){
   const o=origin();
@@ -489,7 +544,7 @@ async function loadAll(force){
   const o=origin(),k=o.lat+','+o.lng;
   if(allVenues&&allKey===k&&!force)return allVenues;
   const r=await api(`/api/allvenues?lat=${o.lat}&lng=${o.lng}`);
-  allVenues=r.venues;allKey=k;register(allVenues);
+  allVenues=r.venues;allKey=k;register(allVenues);updateSetBadge();
   return allVenues;
 }
 
@@ -635,22 +690,43 @@ function renderSettings(){
 function renderVList(){
   const box=$('#vlist');if(!box)return;
   const all=settingsList(),q=(($('#vq')||{}).value||'').trim();
-  const list=q?all.filter(v=>v.name.includes(q)||(v.addr||'').includes(q)):all;
-  const c=$('#vcount');if(c)c.textContent=all.length;
+  const list=q?all.filter(v=>v.name.includes(q)||(v.addr||'').includes(q)||regionOf(v).includes(q)):all;
+  const c=$('#vcount');if(c)c.textContent=all.length;if(tab==='settings')updateTop();
   const custom=S.sort==='custom'&&!q;
-  const onList=list.filter(v=>isOn(v.id));
-  const row=(v,i)=>{const on=isOn(v.id);return `
-    <li class="vrow${on?'':' off'}">
+  const row=(v,i,arr)=>{const on=isOn(v.id),nw=isNewV(v);return `
+    <li class="vrow${on?'':' off'}${nw?' isnew':''}" data-vid="${esc(v.id)}">
+      ${nw?'<span class="vnew">NEW</span>':''}
       <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${isHeart(v.id)}" aria-label="${esc(v.name)} 하트">${ICON.heart}</button>
       <div class="vtext"><strong>${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span> · ${v.active?`전시 ${v.active}개`:'지금 전시 없음'}${v.addr?` · ${esc(v.addr)}`:''}</small></div>
       <label class="switch"><input type="checkbox" id="on-${esc(v.id)}" data-on="${esc(v.id)}" ${on?'checked':''}><span class="track"></span><span class="sr">${esc(v.name)} 근처 피드에 포함</span></label>
-      ${custom&&on?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===onList.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
+      ${custom&&on?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===arr.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
     </li>`};
-  const offList=list.filter(v=>!isOn(v.id));
-  box.innerHTML=list.length
-    ? onList.map(row).join('')+(offList.length?`<li class="offhead">꺼 둔 공간 ${offList.length}</li>`+offList.map(row).join(''):'')
-    : `<li class="note">‘${esc(q)}’에 맞는 공간이 없어요.</li>`;
+  const block=l=>{const onL=l.filter(v=>isOn(v.id)),offL=l.filter(v=>!isOn(v.id));
+    return onL.map((v,i)=>row(v,i,onL)).join('')+(offL.length?`<li class="offhead">꺼 둔 공간 ${offL.length}</li>`+offL.map((v,i)=>row(v,i,offL)).join(''):'')};
+  if(!list.length){box.innerHTML=`<li class="note">‘${esc(q)}’에 맞는 공간이 없어요.</li>`;return}
+  if(q){box.innerHTML=block(list);observeVenueRows(box);return}
+  // 지역별로 묶음. 지역 순서는 기준 위치에서 가까운 공간이 있는 지역부터, 지역 안은 고른 정렬 그대로
+  const groups=new Map();
+  list.forEach(v=>{const r=regionOf(v);if(!groups.has(r))groups.set(r,[]);groups.get(r).push(v)});
+  const o=origin(),home=regionOf({lat:o.lat,lng:o.lng});   // 기준 위치가 있는 지역은 맨 위에 펼쳐 둠
+  const order=[...groups.entries()].map(([r,l])=>({r,l,d:r===home?-1:Math.min(...l.map(v=>dist(v)))})).sort((a,b)=>a.d-b.d);
+  S.rexp=S.rexp||{};
+  box.innerHTML=order.map(({r,l})=>{
+    const open=r in S.rexp?S.rexp[r]:r===home;
+    return `<li class="rgrp" data-rg="${esc(r)}">
+      <button class="rhead" data-region="${esc(r)}" aria-expanded="${open}"><svg class="car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>${esc(r)} <span class="cnt">${l.length}곳</span><span class="ncnt" hidden></span></button>
+      ${open?`<ul>${block(l)}</ul>`:''}
+    </li>`}).join('');
+  paintRegionCounts();observeVenueRows(box);
 }
+// 지역 머리의 NEW 개수 (접혀 있어도 보임)
+function paintRegionCounts(){
+  document.querySelectorAll('#vlist .rgrp').forEach(g=>{
+    const r=g.dataset.rg,n=settingsList().filter(v=>regionOf(v)===r&&isNewV(v)).length;
+    const el=g.querySelector('.ncnt');if(el){el.hidden=!n;el.textContent=`NEW ${n}`}
+  });
+}
+function observeVenueRows(root){root.querySelectorAll('.vrow.isnew').forEach(li=>vIO.observe(li))}
 function statusText(s){const t=new Date(s.updatedAt);return `마지막 갱신 ${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())} · 공간 ${s.venues}곳 · 전시 ${s.exhibitions}개`}
 const venueById=id=>(allVenues||[]).find(v=>v.id===id)||(S.prefs[id]&&S.prefs[id].v)||null;
 
@@ -894,6 +970,7 @@ document.addEventListener('click',ev=>{
   if(d.act==='visit-save'){saveVisitDate();return}
   if(d.act==='visit-remove'){removeVisit();return}
   if(d.act==='visit-close'){closeVisitDialog();return}
+  if(d.region){S.rexp=S.rexp||{};S.rexp[d.region]=t.getAttribute('aria-expanded')!=='true';save();const page=$('#view-settings'),top=page.scrollTop;renderVList();page.scrollTop=top;return}
   if(d.heart){toggleHeart(d.heart);updateTop();return}
   if(d.act==='retry'){near.error=null;loadMore();return}
   if(d.act==='retry-heart'){renderHearts();return}
@@ -908,7 +985,8 @@ document.addEventListener('click',ev=>{
     // 꺼 둔 공간은 건너뛰고, 켜진 공간끼리만 자리를 바꿈 (꺼 둔 공간의 원래 자리는 그대로 보존)
     const cur=new Set(S.order);settingsListRaw().forEach(v=>{if(!cur.has(v.id))S.order.push(v.id)});
     const i=S.order.indexOf(d.move);if(i<0)return;
-    let j=i+Number(d.dir);while(j>=0&&j<S.order.length&&!isOn(S.order[j]))j+=Number(d.dir);
+    const rg=regionOf(venueById(d.move)||{});
+    let j=i+Number(d.dir);while(j>=0&&j<S.order.length&&(!isOn(S.order[j])||regionOf(venueById(S.order[j])||{})!==rg))j+=Number(d.dir);
     if(j<0||j>=S.order.length)return;
     [S.order[i],S.order[j]]=[S.order[j],S.order[i]];save();renderVList();$(`[data-move="${CSS.escape(d.move)}"][data-dir="${d.dir}"]`)?.focus();return}
   if(d.reset!==undefined){armed(t,'한 번 더 누르면 초기화',()=>{S=defaults();save();near.dirty=true;renderSettings();updateTop();toast('처음 상태로 되돌렸어요')});return}
@@ -935,6 +1013,7 @@ document.addEventListener('input',ev=>{if(pv&&ev.target.id&&ev.target.id.startsW
 save();
 show((location.hash||'').slice(1)||'near');
 setTimeout(refreshHeartBadge,1500);
+setTimeout(()=>loadAll().then(updateSetBadge).catch(()=>{}),1800);
 })();
 </script>
 
