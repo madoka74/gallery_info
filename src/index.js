@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.46';
+const VERSION = '2026-10-03.47';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -235,6 +235,33 @@ async function route(url, req, env, ctx) {
       .filter(v => v.active)
       .sort((a, b) => a.distance - b.distance);
     return json({ venues });
+  }
+
+  if (p === '/api/walk') {
+    // TMAP 보행자 경로: 기준 위치 → 전시장 (3km 이내만). 같은 구간은 하루 동안 캐시
+    if (!env.TMAP_KEY) return json({ error: 'TMAP_KEY가 없어요' }, 404);
+    const f = [num(q('flat'), NaN), num(q('flng'), NaN)], t = [num(q('tlat'), NaN), num(q('tlng'), NaN)];
+    if (![...f, ...t].every(Number.isFinite)) return json({ error: '좌표가 없어요' }, 400);
+    if (haversine(f[0], f[1], t[0], t[1]) > 3000) return json({ tooFar: true });
+    const r4 = x => x.toFixed(4);
+    const ck = new Request(`https://walk.cache/${r4(f[0])},${r4(f[1])}-${r4(t[0])},${r4(t[1])}`);
+    const hit = await caches.default.match(ck);
+    if (hit) return new Response(hit.body, { headers: { 'content-type': 'application/json; charset=utf-8', ...cors() } });
+    const res = await fetch('https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1', {
+      method: 'POST', headers: { appKey: env.TMAP_KEY, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ startX: f[1], startY: f[0], endX: t[1], endY: t[0], startName: String(q('fname') || '출발').slice(0, 40), endName: String(q('tname') || '도착').slice(0, 40), reqCoordType: 'WGS84GEO', resCoordType: 'WGS84GEO', searchOption: '0' })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !Array.isArray(j.features)) return json({ error: 'TMAP ' + res.status + ': ' + (j.error?.message || j.error?.code || '경로를 받지 못했어요') }, 502);
+    const path = [];
+    for (const ft of j.features) if (ft.geometry?.type === 'LineString') for (const [x, y] of ft.geometry.coordinates) {
+      const last = path[path.length - 1];
+      if (!last || last[0] !== y || last[1] !== x) path.push([+y.toFixed(6), +x.toFixed(6)]);
+    }
+    const head = j.features.find(ft => ft.properties && ft.properties.totalDistance != null)?.properties || {};
+    const body = JSON.stringify({ meters: head.totalDistance || 0, seconds: head.totalTime || 0, path });
+    ctx.waitUntil(caches.default.put(ck, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=86400' } })));
+    return new Response(body, { headers: { 'content-type': 'application/json; charset=utf-8', ...cors() } });
   }
 
   if (p === '/api/resolve') {
