@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.39';
+const VERSION = '2026-10-03.42';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -237,6 +237,39 @@ async function route(url, req, env, ctx) {
     return json({ venues });
   }
 
+  if (p === '/api/resolve') {
+    // 앱에 남아 있는 '서버에 없는 공간 id'(예전 표기 시절 하트·끔 설정)를 지금 공간으로 이어 줌
+    // 순서: 예전 id 기록 → 지금 방식으로 정리한 이름의 키 → 400m 안 이름이 같은/포함하는 공간
+    const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200);
+    const vmap = (await env.CACHE.get(VID_KEY, 'json')) || {};
+    const byId = new Map(ds.venues.map(v => [v.id, v]));
+    const prevOf = new Map(); ds.venues.forEach(v => (v.prevIds || []).forEach(x => { if (!prevOf.has(x)) prevOf.set(x, v); }));
+    const knownIds = new Set(Object.entries(vmap).filter(([k]) => !k.startsWith('@')).map(([, id]) => id));
+    const out = {};
+    for (const it of items) {
+      // 지금 목록에 있거나, 지금 쓰는 id인데 전시가 잠시 없어 빠진 공간이면 그대로 둠
+      if (!it || !it.id || byId.has(it.id) || knownIds.has(it.id)) continue;
+      let v = prevOf.get(it.id);
+      if (!v && it.name) {
+        const k = norm(placeParts(it.name).name);
+        if (k && vmap[k] && byId.has(vmap[k])) v = byId.get(vmap[k]);
+      }
+      if (!v && it.name && Number.isFinite(+it.lat) && Number.isFinite(+it.lng)) {
+        const ka = simKey(placeParts(it.name).name);
+        let best = null, bd = 400;
+        for (const c of ds.venues) {
+          const d = haversine(+it.lat, +it.lng, c.lat, c.lng);
+          if (d >= bd) continue;
+          const kb = simKey(c.name);
+          if (ka.length >= 2 && kb.length >= 2 && (ka === kb || (Math.min(ka.length, kb.length) >= 3 && (ka.includes(kb) || kb.includes(ka))))) { best = c; bd = d; }
+        }
+        v = best;
+      }
+      if (v) out[it.id] = { id: v.id, name: v.name, addr: v.addr, lat: v.lat, lng: v.lng };
+    }
+    return json({ map: out });
+  }
+
   if (p === '/api/venues') {
     const ids = Array.isArray(body.ids) ? body.ids : String(q('ids') || '').split(',').filter(Boolean);
     // 예전 id로 물어도 지금 공간을 돌려줌 (응답의 id·prevIds로 앱이 스스로 옮김)
@@ -361,6 +394,15 @@ async function rebuild(env) {
   await assignVenueIds(env, venues, stats);
   stats.newToday = await stampFirstSeen(env, venues);
   stats.newVenuesToday = venues.filter(v => v.firstSeen > new Date(Date.now() - 86400e3).toISOString()).length;
+  // 지난번과 비교해 어떤 공간이 생기고 빠졌는지 기록 (/api/status의 stats.venueChanges로 확인)
+  const old = (await env.CACHE.get(DATASET_KEY, 'json')) || { venues: [] };
+  const live = list => new Map(list.filter(v => v.ex.some(e => e.end >= today)).map(v => [v.id, v.name]));
+  const before = live(old.venues), after = live(venues);
+  stats.venueChanges = {
+    added: [...after].filter(([id]) => !before.has(id)).map(([, n]) => n).slice(0, 30),
+    removed: [...before].filter(([id]) => !after.has(id)).map(([, n]) => n).slice(0, 30),
+    since: old.updatedAt || null
+  };
   await env.CACHE.put(DATASET_KEY, JSON.stringify({ updatedAt: new Date().toISOString(), venues, stats }));
   return stats;
 }
