@@ -174,6 +174,15 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .pv .ok{color:var(--accent);font-size:12.5px;font-weight:600}
 .srow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding-block:8px;border-top:1px solid var(--line)}
 .srow:first-child{border-top:0}
+.syncstat{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.syncstat .dot{width:8px;height:8px;border-radius:50%;background:#2DB55D;flex:none}
+.syncstat .dot.err{background:var(--warn)}
+.codebox{display:flex;gap:8px;align-items:center;margin-top:10px}
+.codebox input{flex:1;min-width:0;font-family:var(--f-mono);font-size:16px;letter-spacing:.04em}
+.syncrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.kc{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.restorebox{margin-top:12px;padding:12px;border-radius:12px;background:var(--chip);display:flex;flex-direction:column;gap:8px}
+.restorebox p{margin:0;font-size:13px}
 .duprow{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
 .dside{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:10px;background:var(--chip)}
 .dside strong{font-size:14px;font-weight:600;word-break:keep-all;overflow-wrap:anywhere}
@@ -276,7 +285,7 @@ const localYmd=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padS
 Object.values(S.visited).forEach(r=>{if(r.at&&r.at.length>10)r.at=localYmd(new Date(r.at))});
 // 별표 전시는 끝나면 자동으로 빠짐 (관람 기록은 남음)
 S.stars=S.stars.filter(s=>s.e&&s.e.end>=localYmd());
-const save = () => { try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} };
+const save = () => { try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} syncSoon(); };
 
 /* ---------- 도우미 ---------- */
 const $=(s,r=document)=>r.querySelector(s);
@@ -748,6 +757,7 @@ function renderSettings(){
     <p class="note">지금 전시가 열려 있는 모든 공간입니다. 스위치를 끄면 근처 피드에서 빠지고 목록 맨 아래로 내려가요. 하트 탭은 이 순서를 따릅니다.</p>
     <ul class="vlist" id="vlist"><li class="note">공간 목록을 불러오는 중…</li></ul>
   </section>
+  <section class="sec" id="syncsec"></section>
   <section class="sec" id="adminsec"></section>
   <section class="sec">
     <h3>데이터</h3>
@@ -756,7 +766,7 @@ function renderSettings(){
     <div><button class="btn ghost danger" data-reset>내 설정 초기화</button></div>
   </section>`;
   loadAll().then(()=>{sessNew=new Set((allVenues||[]).filter(isNewV).map(v=>v.id));renderVList()}).catch(err=>{const b=$('#vlist');if(b)b.innerHTML=`<li class="note">${esc(err.message)}</li>`});
-  renderAdmin();
+  renderSync();renderAdmin();
   if(!statusCache)api('/api/status').then(s=>{statusCache=s;const p=$('#dstatus');if(p)p.textContent=statusText(s)}).catch(err=>{const p=$('#dstatus');if(p)p.textContent='서버 상태를 확인하지 못했어요: '+err.message});
 }
 function renderVList(){
@@ -1077,7 +1087,7 @@ document.addEventListener('click',ev=>{
     let j=i+Number(d.dir);while(j>=0&&j<S.order.length&&(!isOn(S.order[j])||regionOf(venueById(S.order[j])||{})!==rg))j+=Number(d.dir);
     if(j<0||j>=S.order.length)return;
     [S.order[i],S.order[j]]=[S.order[j],S.order[i]];save();renderVList();$(`[data-move="${CSS.escape(d.move)}"][data-dir="${d.dir}"]`)?.focus();return}
-  if(d.reset!==undefined){armed(t,'한 번 더 누르면 초기화',()=>{S=defaults();save();near.dirty=true;renderSettings();updateTop();toast('처음 상태로 되돌렸어요')});return}
+  if(d.reset!==undefined){armed(t,'한 번 더 누르면 초기화',()=>{S=defaults();SY.code=newCode();SY.base=null;SY.last='';SY.at=null;saveSY();save();near.dirty=true;renderSettings();updateTop();toast('처음 상태로 되돌렸어요')});return}
 });
 document.addEventListener('change',ev=>{
   const t=ev.target;if(!t.dataset||!t.dataset.on)return;
@@ -1098,10 +1108,168 @@ document.addEventListener('submit',ev=>{
 });
 document.addEventListener('input',ev=>{if(pv&&ev.target.id&&ev.target.id.startsWith('pv-'))pv.dirty=true});
 
+/* ---------- 백업·복원 (복원 코드 자동 동기화) ----------
+   기기마다 복원 코드가 있고, 저장 데이터가 바뀌면 20초쯤 모았다가 서버에 올림(앱을 닫을 때는 바로).
+   다른 기기에서 코드를 넣으면 가져오고, 이후엔 두 기기가 같은 코드로 서로 합쳐 가며 저장 */
+const SYNC_KEY='gakkaun-sync';
+var SY={};try{SY=JSON.parse(localStorage.getItem(SYNC_KEY))||{}}catch(e){}  // var: 앞쪽 코드의 save()가 먼저 불려도 오류 나지 않게
+function saveSY(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(SY))}catch(e){}}
+function newCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',b=new Uint8Array(24);crypto.getRandomValues(b);return [...b].map(x=>A[x%32]).join('')}
+const fmtCode=c=>String(c||'').replace(/(.{4})(?=.)/g,'$1-');
+const normCode=c=>String(c||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+if(!SY.code){SY.code=newCode();SY.on=true;saveSY()}
+if(SY.on===undefined)SY.on=true;
+// 백업에 담는 것: 위치 기록은 빼고, 내 선택과 기록만
+function syncPayload(){return {v:1,prefs:S.prefs,order:S.order,sort:S.sort,rexp:S.rexp||{},stars:S.stars,visited:S.visited,since:S.since,seen:(S.seen||[]).slice(-1500),vseen:(S.vseen||[]).slice(-1500)}}
+const hashStr=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36)};
+var syncT=null,syncBusy=false,syncErr='';
+function syncSoon(){if(!SY||!SY.on||restoring)return;clearTimeout(syncT);syncT=setTimeout(()=>syncNow(),20000)}
+async function syncNow(keepalive){
+  if(!SY.on||syncBusy||restoring)return;
+  const payload=syncPayload(),h=hashStr(JSON.stringify(payload));
+  if(h===SY.last)return;
+  syncBusy=true;
+  try{
+    let res=await fetch(API+'/api/sync/save',{method:'POST',keepalive:!!keepalive,headers:{'content-type':'application/json'},body:JSON.stringify({code:SY.code,data:payload,base:SY.base||null})});
+    let d=await res.json().catch(()=>({}));
+    if(res.status===409&&d.data){ // 다른 기기가 먼저 저장함 → 합쳐서 다시
+      mergeInto(d.data);restoring=true;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}restoring=false;
+      SY.base=d.savedAt;
+      const p2=syncPayload();
+      res=await fetch(API+'/api/sync/save',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:SY.code,data:p2,base:SY.base})});
+      d=await res.json().catch(()=>({}));
+      if(res.ok){SY.last=hashStr(JSON.stringify(p2))}
+      refreshViewsAfterMerge();
+    }else if(res.ok)SY.last=h;
+    if(!res.ok)throw new Error(d.error||`서버 오류 (${res.status})`);
+    SY.base=d.savedAt;SY.at=d.savedAt;syncErr='';saveSY();
+  }catch(e){syncErr=e.message}
+  finally{syncBusy=false;paintSyncStat()}
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&SY.on){clearTimeout(syncT);syncNow(true)}});
+var restoring=false;
+// 다른 데이터와 합치기: 별표·관람 기록·하트는 합집합(같은 항목은 이 기기 것 우선), 순서는 이 기기 순서 뒤에 없는 것만 붙임
+function mergeInto(r){
+  if(!r||typeof r!=='object')return;
+  S.prefs=S.prefs||{};Object.entries(r.prefs||{}).forEach(([id,p])=>{if(!S.prefs[id])S.prefs[id]=p});
+  const ord=new Set(S.order||[]);(r.order||[]).forEach(id=>{if(!ord.has(id)){S.order.push(id);ord.add(id)}});
+  const have=new Set(S.stars.map(s=>s.e&&s.e.id));(r.stars||[]).forEach(s=>{if(s&&s.e&&!have.has(s.e.id)){S.stars.push(s);have.add(s.e.id)}});
+  S.visited=S.visited||{};Object.entries(r.visited||{}).forEach(([k,v])=>{if(!S.visited[k])S.visited[k]=v});
+  S.seen=[...new Set([...(S.seen||[]),...(r.seen||[])])].slice(-4000);
+  S.vseen=[...new Set([...(S.vseen||[]),...(r.vseen||[])])].slice(-3000);
+  (r.seen||[]).forEach(k=>seenSet.add(k));(r.vseen||[]).forEach(k=>vseenSet.add(k));
+  if(r.since&&(!S.since||r.since<S.since))S.since=r.since;
+  S.rexp={...(r.rexp||{}),...(S.rexp||{})};
+}
+function replaceWith(r){
+  S.prefs=r.prefs||{};S.order=r.order||[];S.sort=r.sort||S.sort;S.rexp=r.rexp||{};
+  S.stars=r.stars||[];S.visited=r.visited||{};S.since=r.since||S.since;S.seen=r.seen||[];S.vseen=r.vseen||[];
+}
+function refreshViewsAfterMerge(){near.dirty=true;updateTop();if(tab==='my')renderMy(true);if(tab==='heart')renderHearts();refreshHeartBadge()}
+const countsOf=r=>({stars:(r.stars||[]).length,visited:Object.keys(r.visited||{}).length,hearts:Object.values(r.prefs||{}).filter(p=>p&&p.heart).length});
+
+let pendingRestore=null; // {data, savedAt, code?, from:'code'|'file'}
+function paintSyncStat(){
+  const el=$('#syncstat');if(!el)return;
+  el.innerHTML=SY.on
+    ?`<span class="dot${syncErr?' err':''}"></span>${syncErr?`백업 실패: ${esc(syncErr)} · 자동으로 다시 시도해요`:SY.at?`자동 백업 켜짐 · 마지막 저장 ${fmtWhen(SY.at)}`:'자동 백업 켜짐 · 아직 저장 전'}`
+    :`<span class="dot err"></span>자동 백업 꺼짐`;
+}
+function fmtWhen(iso){const t=new Date(iso);return `${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`}
+function renderSync(){
+  const el=$('#syncsec');if(!el)return;
+  const c=countsOf(S);
+  el.innerHTML=`<h3>백업·복원</h3>
+    <div class="syncstat" id="syncstat"></div>
+    <p class="note">하트·켜고 끄기·정렬, 별표 ${c.stars}개, 관람 기록 ${c.visited}개를 이 기기의 <b>복원 코드</b>로 서버에 자동 저장해요. 위치 기록은 저장하지 않아요. 아이폰 사파리는 오래 안 쓰면 기기 저장 데이터를 지울 수 있으니, 코드를 꼭 따로 보관해 두세요. 코드를 아는 사람은 이 기록을 볼 수 있어요.</p>
+    <form class="codebox" id="kcform" method="post" action="/api/sync/keychain" target="kcframe">
+      <input class="kc" type="text" name="username" autocomplete="username" value="가까운 전시 백업" tabindex="-1" aria-hidden="true">
+      <input class="field" id="mycode" name="password" type="password" autocomplete="new-password" value="${esc(fmtCode(SY.code))}" aria-label="내 복원 코드">
+      <button class="btn ghost sm" type="button" data-act="code-show">보기</button>
+    </form>
+    <iframe name="kcframe" class="kc" title="키체인 저장" tabindex="-1"></iframe>
+    <div class="syncrow">
+      <button class="btn sm" data-act="code-keychain">키체인에 저장</button>
+      <button class="btn ghost sm" data-act="code-copy">코드 복사</button>
+      ${navigator.share?'<button class="btn ghost sm" data-act="code-share">메모 등에 보관</button>':''}
+      <button class="btn ghost sm" data-act="sync-now">지금 백업</button>
+    </div>
+    <details style="margin-top:14px"><summary>다른 기기의 기록 가져오기</summary>
+      <form class="codebox" id="restoreform" autocomplete="on">
+        <input class="kc" type="text" name="username" autocomplete="username" value="가까운 전시 백업" tabindex="-1" aria-hidden="true">
+        <input class="field" id="restorecode" name="password" type="password" autocomplete="current-password" placeholder="복원 코드 (키체인에서 자동 입력)">
+        <button class="btn sm" type="submit">불러오기</button>
+      </form>
+      <div class="syncrow">
+        <button class="btn ghost sm" data-act="file-export">파일로 내보내기</button>
+        <label class="btn ghost sm" style="cursor:pointer">파일에서 가져오기<input type="file" id="importfile" accept="application/json,.json" hidden></label>
+        <button class="btn ghost sm" data-act="sync-toggle">${SY.on?'자동 백업 끄기':'자동 백업 켜기'}</button>
+      </div>
+      <div id="restorebox"></div>
+    </details>`;
+  paintSyncStat();paintRestore();
+}
+function paintRestore(){
+  const box=$('#restorebox');if(!box)return;
+  if(!pendingRestore){box.innerHTML='';return}
+  const r=countsOf(pendingRestore.data),l=countsOf(S);
+  box.innerHTML=`<div class="restorebox">
+    <p><b>${pendingRestore.from==='file'?'파일':'백업'}에서 찾았어요</b>${pendingRestore.savedAt?` · ${fmtWhen(pendingRestore.savedAt)} 저장`:''}</p>
+    <p>가져올 기록: 별표 ${r.stars} · 관람 기록 ${r.visited} · 하트 ${r.hearts}<br>이 기기 기록: 별표 ${l.stars} · 관람 기록 ${l.visited} · 하트 ${l.hearts}</p>
+    <div class="syncrow"><button class="btn sm" data-act="restore-merge">합치기 (권장)</button><button class="btn ghost sm" data-act="restore-replace">이 기기 기록을 바꾸기</button><button class="btn ghost sm" data-act="restore-cancel">취소</button></div>
+    ${pendingRestore.code?'<p class="note">가져온 뒤에는 이 기기도 같은 코드로 백업해서, 두 기기 기록이 서로 합쳐져요.</p>':''}
+  </div>`;
+}
+async function loadFromCode(code){
+  code=normCode(code);if(code.length<20){toast('복원 코드를 확인해 주세요');return}
+  try{const r=await api('/api/sync/load',{code});pendingRestore={data:r.data,savedAt:r.savedAt,code,from:'code'};paintRestore()}
+  catch(e){toast(e.message)}
+}
+function applyRestore(mode){
+  const pr=pendingRestore;if(!pr)return;
+  restoring=true;
+  if(mode==='replace')replaceWith(pr.data);else mergeInto(pr.data);
+  seenSet.clear();(S.seen||[]).forEach(k=>seenSet.add(k));vseenSet.clear();(S.vseen||[]).forEach(k=>vseenSet.add(k));
+  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+  restoring=false;
+  if(pr.code){SY.code=pr.code;SY.base=pr.savedAt;SY.last='';saveSY()}
+  pendingRestore=null;allVenues=null;
+  toast(mode==='replace'?'백업 기록으로 바꿨어요':'기록을 합쳤어요');
+  renderSettings();refreshViewsAfterMerge();syncNow();
+}
+function exportFile(){
+  const blob=new Blob([JSON.stringify({app:'gakkaun-jeonsi',exportedAt:new Date().toISOString(),data:syncPayload()},null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`가까운전시-백업-${localYmd()}.json`;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+}
+document.addEventListener('change',ev=>{
+  if(ev.target.id!=='importfile')return;
+  const f=ev.target.files&&ev.target.files[0];if(!f)return;
+  f.text().then(t=>{const j=JSON.parse(t);const d=j.data||j;if(!d||(!d.stars&&!d.visited&&!d.prefs))throw new Error('가까운 전시 백업 파일이 아니에요');
+    pendingRestore={data:d,savedAt:j.exportedAt||null,from:'file'};paintRestore()}).catch(e=>toast(e.message||'파일을 읽지 못했어요'));
+  ev.target.value='';
+});
+document.addEventListener('submit',ev=>{
+  if(ev.target.id==='restoreform'){ev.preventDefault();loadFromCode(($('#restorecode')||{}).value)}
+});
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest('button');if(!t||!t.dataset.act)return;const a=t.dataset.act;
+  if(a==='code-show'){const i=$('#mycode');if(i){i.type=i.type==='password'?'text':'password';t.textContent=i.type==='password'?'보기':'숨기기'}}
+  else if(a==='code-keychain'){const f=$('#kcform');if(f){f.submit();toast('아이폰이 암호 저장을 물으면 ‘저장’을 누르세요')}}
+  else if(a==='code-copy'){(navigator.clipboard?navigator.clipboard.writeText(fmtCode(SY.code)):Promise.reject()).then(()=>toast('복원 코드를 복사했어요')).catch(()=>{const i=$('#mycode');if(i){i.type='text';i.select()}toast('코드를 길게 눌러 복사하세요')})}
+  else if(a==='code-share'){navigator.share({title:'가까운 전시 복원 코드',text:`가까운 전시 복원 코드: ${fmtCode(SY.code)}`}).catch(()=>{})}
+  else if(a==='sync-now'){SY.last='';syncNow().then(()=>toast(syncErr?'백업 실패: '+syncErr:'백업했어요'))}
+  else if(a==='sync-toggle'){SY.on=!SY.on;saveSY();renderSync();if(SY.on){SY.last='';syncNow()}}
+  else if(a==='file-export')exportFile();
+  else if(a==='restore-merge')applyRestore('merge');
+  else if(a==='restore-replace')armed(t,'한 번 더 누르면 바꿔요',()=>applyRestore('replace'));
+  else if(a==='restore-cancel'){pendingRestore=null;paintRestore()}
+});
+
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-02.35';
+const APP_VER='2026-10-02.36';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
