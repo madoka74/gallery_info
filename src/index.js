@@ -22,7 +22,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.27';
+const VERSION = '2026-10-02.28';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -434,11 +434,13 @@ function buildVenues(items, stats) {
     byEx.set(k, keep);
   }
   // 2) 공간 키로 묶기 (홈페이지 수집 공간은 sources.js의 공간 하나 = 한 묶음)
-  const groups = new Map(), orphans = [];
+  const groups = new Map(), orphans = [], subs = [];
   for (const it of byEx.values()) {
     if (it.lat == null) { orphans.push(it); continue; }
-    const k = placeKey(it.place);
-    if (!k) continue;
+    const parts = placeParts(it.place);
+    if (parts.hall && !it.hall) it.hall = parts.hall;
+    const k = norm(parts.name);
+    if (!k) { if (parts.hall) subs.push(it); continue; }
     if (!groups.has(k)) groups.set(k, { key: k, names: [], addr: '', lat: it.lat, lng: it.lng, ex: [], crawl: null, aliases: [] });
     const g = groups.get(k);
     g.names.push(placeName(it.place)); g.addr ||= it.addr; g.ex.push(it);
@@ -456,6 +458,14 @@ function buildVenues(items, stats) {
     } else merged.push(g);
   }
   stats.mergedGroups = list.length - merged.length;
+  // 3-1) '전시3동'처럼 단지 이름 없이 동·관만 적힌 전시: 400m 안의 가장 가까운 공간에 붙임
+  let subAttached = 0;
+  for (const it of subs) {
+    let best = null, bd = 400;
+    for (const m of merged) { const d = haversine(m.lat, m.lng, it.lat, it.lng); if (d < bd) { bd = d; best = m; } }
+    if (best) { best.ex.push(it); subAttached++; }
+  }
+  stats.subPlacesAttached = subAttached; stats.subPlacesDropped = subs.length - subAttached;
   // 4) 좌표 없는 전시: 이름이 같은(또는 서로 포함하는) 공간이 있으면 거기에 붙임
   let rescued = 0;
   for (const it of orphans) {
@@ -611,12 +621,25 @@ const norm = s => String(s || '').replace(/[\s·\-_.,'"“”‘’()[\]]/g, '')
 const clean = s => String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 function https(u) { u = String(u || '').trim(); if (!u) return ''; if (u.startsWith('//')) return 'https:' + u; return u.replace(/^http:\/\//i, 'https://'); }
 // "서울시립미술관 서소문본관 2층 전시실1 (덕수궁길)" → "서울시립미술관 서소문본관"
-function placeName(p) {
-  return clean(p)
-    .replace(/\(.*?\)|\[.*?\]/g, ' ')
-    .replace(/\s+(지하\s*)?(B?\d+\s*층|B\d+|\d+\s*F|제?\s*\d+\s*전시실|[A-Za-z가-힣]*\s*전시실\s*\d*|로비|야외.*|\d+\s*관(?=\s|$)).*$/i, '')
-    .replace(/\s+/g, ' ').trim();
+// "서울공예박물관 전시3동 2층" → "서울공예박물관", "전시3동" → "" (단지 이름이 빠진 표기: 근처 공간에 붙임)
+// 동·관·층·전시실처럼 한 단지 안의 위치를 나타내는 꼬리
+const SUBLOC = /(?:^|\s+)(?:지하\s*)?(?:B?\d+\s*층|B\d+|\d+\s*F|제?\s*\d+\s*전시실|[A-Za-z가-힣]{0,4}\s*전시실\s*\d*|로비|야외.*|[가-힣]{0,3}\s*\d+\s*관(?=\s|$)|전시\s*\d+\s*동|\d+\s*동(?=\s|$)|별관|신관|구관)(?=\s|$|\d).*$/i;
+// 여러 시설이 모인 단지는 단지 이름 하나로 (안쪽 시설 이름은 hall로)
+const COMPLEXES = [
+  { re: /DDP|동대문\s*디자인\s*플라자/i, name: '동대문디자인플라자(DDP)' }
+];
+function placeParts(p) {
+  const c = clean(p);
+  for (const x of COMPLEXES) if (x.re.test(c)) {
+    const hall = c.replace(/\(?\s*DDP\s*\)?|동대문\s*디자인\s*플라자/gi, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+    return { name: x.name, hall };
+  }
+  const base = c.replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s+/g, ' ').trim();
+  const name = base.replace(SUBLOC, '').replace(/\s+/g, ' ').trim();
+  const hall = base.slice(name.length).trim();
+  return { name, hall };
 }
+function placeName(p) { return placeParts(p).name; }
 const placeKey = p => norm(placeName(p));
 function mostCommon(arr) {
   const c = new Map(); arr.forEach(x => c.set(x, (c.get(x) || 0) + 1));
