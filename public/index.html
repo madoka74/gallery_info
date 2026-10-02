@@ -185,9 +185,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
 .rhead .cnt{font-family:var(--f-mono);font-size:12.5px;font-weight:400;color:var(--muted)}
 .rhead .ncnt{margin-left:auto;font-family:var(--f-mono);font-size:11.5px;font-weight:700;letter-spacing:.06em;color:#fff;background:#FF2D55;border-radius:999px;padding:3px 8px}
 .rgrp>ul{list-style:none;margin:0 0 6px;padding:0 0 0 4px}
-.vrow.isnew{grid-template-columns:auto auto minmax(0,1fr) auto auto}
-.vnew{font-family:var(--f-mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#fff;background:#FF2D55;border-radius:5px;padding:3px 5px;transition:opacity .5s}
-.vnew.gone{opacity:0}
+.vnew{display:inline-block;vertical-align:2px;margin-right:6px;font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:.06em;line-height:1;color:#fff;background:#FF2D55;border-radius:4px;padding:3px 5px}
 .offhead{padding-block:10px 4px;font-size:12px;color:var(--muted);letter-spacing:.06em;border-top:1px solid var(--line)}
 .nav{display:grid;grid-template-columns:repeat(4,1fr);padding-block:6px 8px;border-top:1px solid var(--line)}
 .nav button{display:flex;flex-direction:column;align-items:center;gap:2px;padding-block:6px;font-size:11.5px;color:var(--muted);position:relative}
@@ -342,20 +340,18 @@ function updateSetBadge(){
   const b=$('#setbadge');if(b){b.hidden=!n;b.textContent=n}
 }
 let vseenSaveT;
+// 이번에 설정 화면을 열었을 때의 새 공간. 보는 동안엔 NEW·개수를 그대로 두고, 다음에 열 때(또는 새로고침) 정리됨
+let sessNew=new Set();
 function markVenueSeen(id){
   if(!id||vseenSet.has(id))return;
   vseenSet.add(id);S.vseen=[...vseenSet].slice(-3000);
   clearTimeout(vseenSaveT);vseenSaveT=setTimeout(save,400);
-  updateSetBadge();paintRegionCounts();
 }
 const vTimers=new Map();
 const vIO=new IntersectionObserver(ents=>ents.forEach(en=>{
   const li=en.target;
   if(en.isIntersecting&&en.intersectionRatio>=0.9){
-    if(!vTimers.has(li))vTimers.set(li,setTimeout(()=>{
-      markVenueSeen(li.dataset.vid);vIO.unobserve(li);
-      const tag=li.querySelector('.vnew');if(tag){setTimeout(()=>tag.classList.add('gone'),1200)}
-    },900));
+    if(!vTimers.has(li))vTimers.set(li,setTimeout(()=>{markVenueSeen(li.dataset.vid);vIO.unobserve(li)},900));
   }else{clearTimeout(vTimers.get(li));vTimers.delete(li)}
 }),{threshold:[0,0.9]});
 
@@ -683,7 +679,7 @@ function renderSettings(){
     <p class="note">출처: 한국문화정보원 문화포털, 서울특별시 서울 열린데이터광장 (공공누리 제1유형), 각 전시공간 공식 홈페이지</p>
     <div><button class="btn ghost danger" data-reset>내 설정 초기화</button></div>
   </section>`;
-  loadAll().then(renderVList).catch(err=>{const b=$('#vlist');if(b)b.innerHTML=`<li class="note">${esc(err.message)}</li>`});
+  loadAll().then(()=>{sessNew=new Set((allVenues||[]).filter(isNewV).map(v=>v.id));renderVList()}).catch(err=>{const b=$('#vlist');if(b)b.innerHTML=`<li class="note">${esc(err.message)}</li>`});
   renderAdmin();
   if(!statusCache)api('/api/status').then(s=>{statusCache=s;const p=$('#dstatus');if(p)p.textContent=statusText(s)}).catch(err=>{const p=$('#dstatus');if(p)p.textContent='서버 상태를 확인하지 못했어요: '+err.message});
 }
@@ -693,11 +689,10 @@ function renderVList(){
   const list=q?all.filter(v=>v.name.includes(q)||(v.addr||'').includes(q)||regionOf(v).includes(q)):all;
   const c=$('#vcount');if(c)c.textContent=all.length;if(tab==='settings')updateTop();
   const custom=S.sort==='custom'&&!q;
-  const row=(v,i,arr)=>{const on=isOn(v.id),nw=isNewV(v);return `
+  const row=(v,i,arr)=>{const on=isOn(v.id),nw=sessNew.has(v.id);return `
     <li class="vrow${on?'':' off'}${nw?' isnew':''}" data-vid="${esc(v.id)}">
-      ${nw?'<span class="vnew">NEW</span>':''}
       <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${isHeart(v.id)}" aria-label="${esc(v.name)} 하트">${ICON.heart}</button>
-      <div class="vtext"><strong>${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span> · ${v.active?`전시 ${v.active}개`:'지금 전시 없음'}${v.addr?` · ${esc(v.addr)}`:''}</small></div>
+      <div class="vtext"><strong>${nw?'<span class="vnew">NEW</span>':''}${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span> · ${v.active?`전시 ${v.active}개`:'지금 전시 없음'}${v.addr?` · ${esc(v.addr)}`:''}</small></div>
       <label class="switch"><input type="checkbox" id="on-${esc(v.id)}" data-on="${esc(v.id)}" ${on?'checked':''}><span class="track"></span><span class="sr">${esc(v.name)} 근처 피드에 포함</span></label>
       ${custom&&on?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===arr.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
     </li>`};
@@ -722,7 +717,7 @@ function renderVList(){
 // 지역 머리의 NEW 개수 (접혀 있어도 보임)
 function paintRegionCounts(){
   document.querySelectorAll('#vlist .rgrp').forEach(g=>{
-    const r=g.dataset.rg,n=settingsList().filter(v=>regionOf(v)===r&&isNewV(v)).length;
+    const r=g.dataset.rg,n=settingsList().filter(v=>regionOf(v)===r&&sessNew.has(v.id)).length;
     const el=g.querySelector('.ncnt');if(el){el.hidden=!n;el.textContent=`NEW ${n}`}
   });
 }
@@ -849,7 +844,7 @@ function show(t){
   if(t==='near'&&near.dirty)resetNear();
   if(t==='heart')renderHearts();
   if(t==='my')renderMy();
-  if(t==='settings'){allVenues=null;statusCache=null;renderSettings();}
+  if(t==='settings'){allVenues=null;statusCache=null;renderSettings();}else updateSetBadge();
   updateTop();
   try{history.replaceState(null,'','#'+t)}catch(e){}
 }
