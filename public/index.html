@@ -130,14 +130,19 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .btn.ghost{background:var(--chip);color:var(--fg)}
 .btn.danger[data-armed]{background:var(--heart);color:var(--surface)}
 
-.ovl-r{display:flex;align-items:center;gap:8px}
-.dchip{display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:999px;font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:13px;font-weight:500;background:var(--surface);color:var(--fg)}
+.ovl-r{display:flex;align-items:center;gap:6px;flex:none}
+.ovl>.chip{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;line-height:18px}
+.ovl .icon-btn{width:34px;height:34px}
+.ovl .icon-btn svg{width:19px;height:19px}
+.dchip{display:inline-flex;align-items:center;height:30px;padding:0 10px;white-space:nowrap;flex:none;border-radius:999px;font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:13px;font-weight:500;background:var(--surface);color:var(--fg)}
 .dchip.closing{background:var(--warn);color:var(--surface)}
 .dchip.soon{border:1px dashed var(--muted);background:var(--surface)}
 .dchip.ended{color:var(--muted)}
 .card.is-ended{opacity:.6}
 .frame{position:relative}
-.newtag{position:absolute;top:-9px;left:-9px;z-index:2;padding:4px 8px;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-family:var(--f-mono);font-size:12px;font-weight:500;letter-spacing:.08em;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.newtag{position:absolute;top:-11px;left:-11px;z-index:2;padding:6px 11px;border-radius:7px;background:#FF2D55;color:#fff;font-family:var(--f-mono);font-size:14px;font-weight:700;letter-spacing:.1em;line-height:1;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.35);animation:newpulse 1.3s ease-in-out infinite}
+@keyframes newpulse{0%{box-shadow:0 3px 10px rgba(0,0,0,.35),0 0 0 0 rgba(255,45,85,.75);opacity:1}45%{opacity:.45}60%{box-shadow:0 3px 10px rgba(0,0,0,.35),0 0 0 14px rgba(255,45,85,0);opacity:1}100%{box-shadow:0 3px 10px rgba(0,0,0,.35),0 0 0 0 rgba(255,45,85,0);opacity:1}}
+.newhead{color:#FF2D55;font-weight:600}
 .stamp{position:absolute;left:50%;top:50%;z-index:2;transform:translate(-50%,-50%) rotate(-14deg);display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 18px;border:4px solid var(--stamp);outline:2px solid var(--stamp);outline-offset:4px;border-radius:12px;background:var(--stamp-bg);color:var(--stamp);white-space:nowrap;pointer-events:none}
 .stamp b{font-family:var(--f-display);font-weight:800;font-size:clamp(24px,8vw,36px);letter-spacing:.1em}
 .stamp small{font-family:var(--f-mono);font-size:13px;letter-spacing:.06em}
@@ -294,7 +299,6 @@ function dist(v){
   return 2*R*Math.asin(Math.sqrt(h));
 }
 const fmtDist=m=>m<1000?`${Math.max(10,Math.round(m/10)*10)}m`:`${(m/1000).toFixed(1)}km`;
-const walkTxt=m=>{const min=Math.max(1,Math.round(m*1.25/75));return min<=40?`도보 ${min}분`:`대중교통 ${Math.max(10,Math.round(m/1000*3.2+8))}분`};
 const isHeart=id=>!!(S.prefs[id]&&S.prefs[id].heart);
 const isOn=id=>!(S.prefs[id]&&S.prefs[id].on===false);
 function setPref(v,patch){const p=S.prefs[v.id]||(S.prefs[v.id]={heart:false,on:true});Object.assign(p,patch);p.v=slim(v);save();return p}
@@ -454,7 +458,7 @@ function cardHTML(e,v,meta={}){
     <div class="poster">
       <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}">${fresh?'<span class="newtag">NEW</span>':''}${visited?stampHTML(key):''}</div>
       <div class="ovl">
-        <span class="chip mono">${meta.rank?`<b>${pad(meta.rank)}</b>·`:''} ${fmtDist(d)} · ${walkTxt(d)}</span>
+        <span class="chip mono">${meta.rank?`<b>${pad(meta.rank)}</b>·`:''} ${fmtDist(d)}</span>
         <div class="ovl-r"><span class="dchip ${st.kind}">${st.dday}</span><button class="icon-btn" data-visit="${esc(e.id)}" aria-pressed="${visited}" aria-label="본 전시로 표시">${ICON.visit}</button><button class="icon-btn" data-star="${esc(e.id)}" aria-pressed="${starred}" aria-label="MY에 담기">${ICON.star}</button></div>
       </div>
     </div>
@@ -560,8 +564,13 @@ async function renderHearts(){
     const withEx=res.venues.filter(v=>v.ex.length);
     const n=withEx.reduce((a,v)=>a+v.ex.length,0);
     heartInfo={venues:hv.length,count:n};updateTop();
+    // 새로 들어온 전시는 거리·정렬과 관계없이 맨 위로. 확인해서 NEW가 사라지면 다음에 열 때 원래 자리로
+    const fresh=[],rest=[];
+    withEx.forEach((v,i)=>v.ex.forEach((e,j)=>{remember(e,v);(isNewE(e)?fresh:rest).push({e,v,meta:{rank:i+1,idx:j+1,total:v.ex.length}})}));
+    const cards=list=>list.map(x=>cardHTML(x.e,x.v,x.meta)).join('');
     el.innerHTML=n
-      ?venueCards(withEx,0,true)+`<div class="loader">하트 공간 ${hv.length}곳 · 전시 ${n}개 · 설정의 정렬 순서</div>`
+      ?(fresh.length?`<div class="loader newhead">새로 들어온 전시 ${fresh.length}개</div>`+cards(fresh)+`<div class="loader">설정의 정렬 순서</div>`:'')
+        +cards(rest)+`<div class="loader">하트 공간 ${hv.length}곳 · 전시 ${n}개 · 설정의 정렬 순서</div>`
       :`<div class="empty"><h3>지금은 열린 전시가 없어요</h3><p>하트한 공간 ${hv.length}곳에 진행 중이거나 예정된 전시가 없습니다.</p></div>`;
     el.scrollTop=0;observePosters(el);
   }catch(err){
