@@ -325,6 +325,8 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
 .leaflet-tooltip.mtip.strong{font-size:13px}
 .leaflet-tooltip-top.mtip::before{border-top-color:var(--surface)}
 .leaflet-container{font-family:var(--f-body)}
+.walkt{display:inline-flex;align-items:center;gap:3px;color:var(--fg);font-weight:600}
+.walkt svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .kpin{display:flex;flex-direction:column;align-items:center;transform:translateY(8px)}
 .kpin.to{transform:translateY(10px)}
 .kpin span{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18);font:600 12px var(--f-body);padding:3px 8px;margin-bottom:6px;white-space:nowrap}
@@ -589,6 +591,7 @@ const ICON={
   x:'<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>',
   visit:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.3l2.6 2.6 5-5.4"/></svg>',
   pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
+  walk:'<svg viewBox="0 0 24 24"><circle cx="13" cy="4.5" r="1.8"/><path d="M10.5 21l2-6 2.5 2.5V21M8 12.5l2.5-4.5 3 1 2 3 2.5 1M12.5 9.5l-1.5 5.5"/></svg>',
   frame:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="1.5"/><path d="M8.5 15.5l2.6-3 2 2.2 1.6-1.7 1.8 2.5"/></svg>'
 };
 // 숫자 앞에 작은 아이콘: ♥3 · ★1 · ✓2 · ▣4 (글자 대신)
@@ -1141,6 +1144,7 @@ function closeVisitDialog(){$('#visitdlg').hidden=true;dlgKey=null}
 /* ---------- 지도: 기준 위치 → 전시장 ----------
    카카오 JavaScript 키(KAKAO_JS_KEY)가 있으면 카카오 지도, 없거나 실패하면 오픈스트리트맵(키 필요 없음) */
 const loadScript=src=>new Promise((ok,no)=>{const js=document.createElement('script');js.src=src;js.onload=ok;js.onerror=()=>no(new Error('지도를 불러오지 못했어요'));document.head.appendChild(js)});
+let mapRoute=null,mapSeq=0;
 let mapKind=null,kmap=null,klayers=[],lmap=null,llayer=null,leafletP=null,kakaoP=null;
 function loadKakao(key){
   if(window.kakao&&kakao.maps&&kakao.maps.LatLng)return Promise.resolve();
@@ -1165,6 +1169,12 @@ function drawKakao(o,v){
   const cs=getComputedStyle(document.documentElement),acc=cs.getPropertyValue('--accent').trim()||'#2C43CF';
   const pin=(pos,name,cls)=>new kakao.maps.CustomOverlay({position:pos,yAnchor:1,content:`<div class="kpin ${cls}"><span>${esc(name)}</span><i></i></div>`});
   klayers=[new kakao.maps.Polyline({path:[a,b],strokeWeight:3,strokeColor:acc,strokeOpacity:.75,strokeStyle:'shortdash'}),pin(a,o.name,'from'),pin(b,v.name,'to')];
+  mapRoute=pts=>{ // 도보 경로가 오면 직선 대신 실제 길로
+    klayers[0].setMap(null);
+    const path=pts.map(([la,ln])=>new kakao.maps.LatLng(la,ln));
+    klayers[0]=new kakao.maps.Polyline({path,strokeWeight:5,strokeColor:acc,strokeOpacity:.9,strokeStyle:'solid'});klayers[0].setMap(kmap);
+    const bd=new kakao.maps.LatLngBounds();path.forEach(p=>bd.extend(p));kmap.setBounds(bd,60,40,40,40);
+  };
   klayers.forEach(x=>x.setMap(kmap));
   setTimeout(()=>{kmap.relayout();const bd=new kakao.maps.LatLngBounds();bd.extend(a);bd.extend(b);kmap.setBounds(bd,60,40,40,40)},30);
 }
@@ -1176,16 +1186,30 @@ function drawLeaflet(o,v){
   if(llayer)llayer.remove();
   const cs=getComputedStyle(document.documentElement),acc=cs.getPropertyValue('--accent').trim()||'#2C43CF',red=cs.getPropertyValue('--heart').trim()||'#D2375A';
   const a=[o.lat,o.lng],b=[v.lat,v.lng];
+  const line=L.polyline([a,b],{color:acc,weight:3,opacity:.7,dashArray:'6 8'});
+  mapRoute=pts=>{line.setLatLngs(pts);line.setStyle({weight:5,opacity:.9,dashArray:null});lmap.fitBounds(line.getBounds(),{padding:[48,48],maxZoom:17})};
   llayer=L.layerGroup([
-    L.polyline([a,b],{color:acc,weight:3,opacity:.7,dashArray:'6 8'}),
+    line,
     L.circleMarker(a,{radius:7,color:'#fff',weight:3,fillColor:acc,fillOpacity:1}).bindTooltip(o.name,{permanent:true,direction:'top',offset:[0,-8],className:'mtip'}),
     L.circleMarker(b,{radius:9,color:'#fff',weight:3,fillColor:red,fillOpacity:1}).bindTooltip(v.name,{permanent:true,direction:'top',offset:[0,-10],className:'mtip strong'})
   ]).addTo(lmap);
   setTimeout(()=>{lmap.invalidateSize();lmap.fitBounds([a,b],{padding:[48,48],maxZoom:16})},30);
 }
+// 3km 이내면 TMAP 도보 경로를 받아 실제 길과 '도보 n분'을 보여 줌 (키가 없거나 실패하면 직선 그대로)
+async function walkRoute(o,v,seq){
+  if(dist(v)>3000)return;
+  try{
+    const r=await fetch(API+`/api/walk?flat=${o.lat}&flng=${o.lng}&tlat=${v.lat}&tlng=${v.lng}&fname=${encodeURIComponent(o.name)}&tname=${encodeURIComponent(v.name)}`);
+    if(!r.ok)return;const w=await r.json();
+    if(seq!==mapSeq||!w.path||w.path.length<2)return;
+    if(mapRoute)mapRoute(w.path);
+    const min=Math.max(1,Math.round(w.seconds/60));
+    $('#mapdlg-sub').innerHTML=`<span class="walkt">${ICON.walk}도보 ${min}분</span><i class="dot"></i><span class="mono">${fmtDist(w.meters)}</span><i class="dot"></i>${esc(o.name)}에서`;
+  }catch(e){}
+}
 async function openMap(exId){
   const rec=EX.get(exId);if(!rec)return;
-  const v=rec.v,o=origin();
+  const v=rec.v,o=origin(),seq=++mapSeq;mapRoute=null;
   $('#mapdlg-title').textContent=v.name;
   $('#mapdlg-sub').innerHTML=`<span class="mono">${fmtDist(dist(v))}</span><i class="dot"></i>${esc(o.name)}에서${v.addr?`<i class="dot"></i>${esc(v.addr)}`:''}`;
   $('#map-kakao').href=`https://map.kakao.com/link/from/${encodeURIComponent(o.name)},${o.lat},${o.lng}/to/${encodeURIComponent(v.name)},${v.lat},${v.lng}`;
@@ -1194,10 +1218,10 @@ async function openMap(exId){
   if(!statusCache){try{statusCache=await api('/api/status')}catch(e){}}
   const key=statusCache&&statusCache.kakaoJsKey;
   if(mapKind!=='leaflet'&&key){
-    try{await loadKakao(key);mapKind='kakao';drawKakao(o,v);return}
+    try{await loadKakao(key);mapKind='kakao';drawKakao(o,v);walkRoute(o,v,seq);return}
     catch(e){console.warn(e)}
   }
-  try{await loadLeaflet();mapKind='leaflet';drawLeaflet(o,v)}
+  try{await loadLeaflet();mapKind='leaflet';drawLeaflet(o,v);walkRoute(o,v,seq)}
   catch(e){$('#mapbox').innerHTML=`<p class="note" style="padding:16px">${esc(e.message)}</p>`}
 }
 function closeMap(){$('#mapdlg').hidden=true}
@@ -1537,7 +1561,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.46';
+const APP_VER='2026-10-03.47';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
