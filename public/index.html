@@ -311,6 +311,20 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
 .syncrow,.codebox{margin-top:0}
 #restoredet{margin-top:0}
 #restorebox:empty{display:none}
+.placebtn{display:flex;flex-direction:column;align-items:flex-start;text-align:left;min-width:0;padding:0}
+.placebtn strong{display:inline-flex;align-items:center;gap:4px}
+.placebtn strong svg{width:13px;height:13px;color:var(--accent);flex:none}
+.mapsheet{gap:12px}
+.maphead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.maphead strong{font-size:17px}
+.mapx{background:var(--chip);width:34px;height:34px}
+.mapx svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2}
+#mapbox{height:min(52vh,360px);border-radius:12px;overflow:hidden;background:var(--wall);border:1px solid var(--line)}
+.mapsheet .dlg-row a.btn{flex:1;height:44px;text-decoration:none}
+.leaflet-tooltip.mtip{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18);font:600 12px var(--f-body);padding:3px 8px}
+.leaflet-tooltip.mtip.strong{font-size:13px}
+.leaflet-tooltip-top.mtip::before{border-top-color:var(--surface)}
+.leaflet-container{font-family:var(--f-body)}
 .locnow{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .locnow strong{font-size:16px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .locbtn{height:44px!important;width:96px;flex:none;gap:4px}
@@ -364,6 +378,13 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
       <button class="btn ghost" data-act="visit-remove">본 전시 표시 빼기</button>
       <button class="btn ghost" data-act="visit-close">닫기</button>
     </div>
+  </div>
+</div>
+<div class="dlg" id="mapdlg" hidden>
+  <div class="dlg-in mapsheet" role="dialog" aria-modal="true" aria-labelledby="mapdlg-title">
+    <div class="maphead"><div class="vtext"><strong id="mapdlg-title"></strong><small id="mapdlg-sub"></small></div><button class="icon-btn mapx" data-act="map-close" aria-label="닫기"><svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg></button></div>
+    <div id="mapbox"></div>
+    <div class="dlg-row"><a class="btn" id="map-kakao" target="_blank" rel="noopener">카카오맵 길찾기</a><a class="btn ghost" id="map-apple" target="_blank" rel="noopener">Apple 지도</a></div>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -720,7 +741,7 @@ function cardHTML(e,v,meta={}){
       <dl class="label">
         ${e.artist?`<dt>작가</dt><dd>${esc(e.artist)}</dd>`:''}
         <dt>기간</dt><dd class="mono">${period(e)}</dd>
-        <dt>장소</dt><dd class="place"><span><strong>${esc(v.name)}</strong>${e.hall||v.addr?`<small>${esc([e.hall,v.addr].filter(Boolean).join(' · '))}</small>`:''}</span><button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${hearted}" aria-label="선호 공간으로 하트">${ICON.heart}</button></dd>
+        <dt>장소</dt><dd class="place"><button class="placebtn" data-map="${esc(e.id)}" aria-label="${esc(v.name)} 지도"><strong>${esc(v.name)}${ICON.pin}</strong>${e.hall||v.addr?`<small>${esc([e.hall,v.addr].filter(Boolean).join(' · '))}</small>`:''}</button><button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${hearted}" aria-label="선호 공간으로 하트">${ICON.heart}</button></dd>
         ${e.fee?`<dt>관람</dt><dd>${esc(e.fee)}</dd>`:''}
         ${e.link?`<dt>정보</dt><dd><a class="ext" href="${esc(e.link)}" target="_blank" rel="noopener">자세히 보기</a></dd>`:''}
       </dl>
@@ -1110,6 +1131,43 @@ function openVisitDialog(key){
   $('#visitdlg').hidden=false;
 }
 function closeVisitDialog(){$('#visitdlg').hidden=true;dlgKey=null}
+
+/* ---------- 지도: 기준 위치 → 전시장 (Leaflet + CARTO 지도, 처음 열 때만 불러옴) ---------- */
+let leafletP=null,lmap=null,llayer=null;
+function loadLeaflet(){
+  if(window.L)return Promise.resolve();
+  if(leafletP)return leafletP;
+  leafletP=new Promise((ok,no)=>{
+    const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';document.head.appendChild(css);
+    const js=document.createElement('script');js.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';js.onload=ok;js.onerror=()=>{leafletP=null;no(new Error('지도를 불러오지 못했어요'))};document.head.appendChild(js);
+  });
+  return leafletP;
+}
+async function openMap(exId){
+  const rec=EX.get(exId);if(!rec)return;
+  const v=rec.v,o=origin();
+  $('#mapdlg-title').textContent=v.name;
+  $('#mapdlg-sub').innerHTML=`<span class="mono">${fmtDist(dist(v))}</span><i class="dot"></i>${esc(o.name)}에서${v.addr?`<i class="dot"></i>${esc(v.addr)}`:''}`;
+  $('#map-kakao').href=`https://map.kakao.com/link/from/${encodeURIComponent(o.name)},${o.lat},${o.lng}/to/${encodeURIComponent(v.name)},${v.lat},${v.lng}`;
+  $('#map-apple').href=`https://maps.apple.com/?saddr=${o.lat},${o.lng}&daddr=${v.lat},${v.lng}&q=${encodeURIComponent(v.name)}`;
+  $('#mapdlg').hidden=false;
+  try{await loadLeaflet()}catch(e){$('#mapbox').innerHTML=`<p class="note">${esc(e.message)}</p>`;return}
+  const dark=matchMedia('(prefers-color-scheme: dark)').matches;
+  if(!lmap){
+    lmap=L.map('mapbox',{zoomControl:false,attributionControl:true});lmap.attributionControl.setPrefix(false);
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark?'dark_all':'light_all'}/{z}/{x}/{y}{r}.png`,{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}).addTo(lmap);
+  }
+  if(llayer)llayer.remove();
+  const cs=getComputedStyle(document.documentElement),acc=cs.getPropertyValue('--accent').trim()||'#2C43CF',red=cs.getPropertyValue('--heart').trim()||'#D2375A';
+  const a=[o.lat,o.lng],b=[v.lat,v.lng];
+  llayer=L.layerGroup([
+    L.polyline([a,b],{color:acc,weight:3,opacity:.7,dashArray:'6 8'}),
+    L.circleMarker(a,{radius:7,color:'#fff',weight:3,fillColor:acc,fillOpacity:1}).bindTooltip(o.name,{permanent:true,direction:'top',offset:[0,-8],className:'mtip'}),
+    L.circleMarker(b,{radius:9,color:'#fff',weight:3,fillColor:red,fillOpacity:1}).bindTooltip(v.name,{permanent:true,direction:'top',offset:[0,-10],className:'mtip strong'})
+  ]).addTo(lmap);
+  setTimeout(()=>{lmap.invalidateSize();lmap.fitBounds([a,b],{padding:[48,48],maxZoom:16})},30);
+}
+function closeMap(){$('#mapdlg').hidden=true}
 function saveVisitDate(){
   const v=$('#visitdate').value;
   if(!dlgKey||!/^\d{4}-\d{2}-\d{2}$/.test(v)){toast('날짜를 골라 주세요');return}
@@ -1178,9 +1236,12 @@ async function searchPlace(q){
 document.addEventListener('click',ev=>{
   const st=ev.target.closest('[data-stamp]');if(st){openVisitDialog(st.dataset.stamp);return}
   if(ev.target.id==='visitdlg'){closeVisitDialog();return}
+  if(ev.target.id==='mapdlg'){closeMap();return}
   const t=ev.target.closest('button');if(!t)return;
   const d=t.dataset;
   if(d.tab){show(d.tab);return}
+  if(d.map){openMap(d.map);return}
+  if(d.act==='map-close'){closeMap();return}
   if(d.goto){show(d.goto);const v=$('#view-'+d.goto);if(v)v.scrollTop=0;return}
   if(d.star){toggleStar(d.star);return}
   if(d.visit){toggleVisit(d.visit);return}
@@ -1232,6 +1293,7 @@ document.addEventListener('change',ev=>{
 });
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'&&!$('#visitdlg').hidden)closeVisitDialog();
+  if(ev.key==='Escape'&&!$('#mapdlg').hidden)closeMap();
   if((ev.key==='Enter'||ev.key===' ')&&ev.target.dataset&&ev.target.dataset.stamp){ev.preventDefault();openVisitDialog(ev.target.dataset.stamp)}
 });
 document.addEventListener('input',ev=>{if(ev.target.id==='vq')renderVList()});
@@ -1442,7 +1504,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.44';
+const APP_VER='2026-10-03.45';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
