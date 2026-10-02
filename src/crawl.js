@@ -72,7 +72,8 @@ export async function crawlBatch(env, opts = {}) {
   const SOURCES = await loadSources(env);
   const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
   const now = Date.now();
-  const dueAt = st => st?.nextAt ?? ((st?.checkedAt || 0) + RECHECK_MS);
+  // 예전 버전 기록(nextAt 없음)도 할당량 초과·서버 오류였으면 1시간 뒤 다시
+  const dueAt = st => st?.nextAt ?? ((st?.checkedAt || 0) + (st?.ok === false && isTransient(st.error || '') ? RETRY_MS : RECHECK_MS));
   let targets;
   if (opts.id) targets = SOURCES.filter(s => s.id === opts.id);
   else {

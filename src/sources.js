@@ -57,7 +57,7 @@ export const SOURCES = [
   { id: 'parkryusook', name: '박여숙화랑', addr: '용산구 이태원동', lat: 37.5410, lng: 127.0005, home: 'https://www.parkryusookgallery.com', url: 'https://www.parkryusookgallery.com' },
 
   // ---- 갤러리: 청담·신사·성수 ----
-  { id: 'perrotin', name: '페로탕 서울', addr: '강남구 도산대로45길 10', lat: 37.5241, lng: 127.0379, home: 'https://www.perrotin.com', url: 'https://www.perrotin.com/exhibitions', branch: 'Seoul', aliases: ['Perrotin','페로탕'] },
+  { id: 'perrotin', name: '페로탕 서울', addr: '강남구 도산대로45길 10', lat: 37.5241, lng: 127.0379, home: 'https://www.perrotin.com', url: 'https://www.perrotin.com/exhibitions/current/seoul/5', branch: 'Seoul', aliases: ['Perrotin','페로탕'] },
   { id: 'whitecube', name: '화이트큐브 서울', addr: '강남구 도산대로45길 6', lat: 37.5243, lng: 127.0386, home: 'https://www.whitecube.com', url: 'https://www.whitecube.com/gallery-exhibitions', branch: 'Seoul', aliases: ['White Cube','화이트큐브'] },
   { id: 'koenig', name: '쾨닉 서울', addr: '강남구 압구정로 412', lat: 37.5253, lng: 127.0451, home: 'https://www.koeniggalerie.com', url: 'https://www.koeniggalerie.com', branch: 'Seoul' },
   { id: 'gladstone', name: '글래드스톤 서울', addr: '강남구 청담동', lat: 37.5249, lng: 127.0495, home: 'https://www.gladstonegallery.com', url: 'https://www.gladstonegallery.com/exhibitions', branch: 'Seoul' },
