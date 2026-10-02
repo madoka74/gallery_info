@@ -10,6 +10,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="가까운 전시">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@700;800&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -308,6 +311,20 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
 .syncrow,.codebox{margin-top:0}
 #restoredet{margin-top:0}
 #restorebox:empty{display:none}
+.locnow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.locnow strong{font-size:16px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.locbtn{height:44px!important;width:96px;flex:none;gap:4px}
+.locbtn svg{width:15px;height:15px}
+.rchip{display:inline-flex;align-items:center;height:32px;border-radius:999px;background:var(--chip);padding-left:12px;font-size:12.5px}
+.rchip.on{background:var(--soft);color:var(--accent);font-weight:600}
+.rchip>button:first-child{height:32px}
+.rchip button{background:none!important;padding:0!important;border-radius:0!important}
+.rchip .rx{width:30px;height:32px;display:grid;place-items:center;color:var(--muted)}
+.rchip .rx svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:2}
+.chips{gap:8px}
+.alist .arow{min-height:52px}
+.alist .clr{justify-content:center;min-height:40px}
+.h3btn{font:inherit;color:inherit;letter-spacing:inherit;padding:0;cursor:default}
 .alist:empty,#probebox:empty{display:none}
 .restorebox{margin-top:0}
 .morerow{min-height:32px;padding:0}
@@ -843,12 +860,12 @@ function renderSettings(){
   <section class="sec">
     <h3>기준 위치</h3>
     <div class="locnow">
-      <div><strong>${esc(origin().name)}</strong><small>${S.loc.mode==='gps'?(S.loc.gps?'내 위치':'위치 권한 없음 · 임시 기준점'):'직접 고른 장소'}</small></div>
-      <button class="btn${S.loc.mode==='gps'?' ghost':''}" data-act="gps">내 위치</button>
+      <strong>${S.loc.mode==='gps'?(S.loc.gps?'현재 위치':'현재 위치 (권한 없음)'):esc(origin().name)}</strong>
+      <button class="btn locbtn${S.loc.mode==='gps'?' ghost':''}" data-act="gps">${ICON.pin}내 위치</button>
     </div>
-    <form class="locform" id="locform"><input class="field" id="locq" type="search" placeholder="주소·지명" autocomplete="off"><button class="btn ghost" type="submit">찾기</button></form>
+    <form class="locform" id="locform"><input class="field" id="locq" type="search" placeholder="주소·지명" autocomplete="off"><button class="btn ghost locbtn" type="submit">찾기</button></form>
     <ul class="alist" id="locres"></ul>
-    ${S.loc.recent.length?`<div class="chips">${S.loc.recent.map((r,i)=>`<button data-recent="${i}">${esc(r.name)}</button>`).join('')}</div>`:''}
+    ${S.loc.recent.length?`<div class="chips">${S.loc.recent.map((r,i)=>`<span class="rchip${S.loc.mode==='place'&&S.loc.place&&S.loc.place.name===r.name?' on':''}"><button data-recent="${i}">${esc(r.name)}</button><button class="rx" data-recentdel="${i}" aria-label="${esc(r.name)} 지우기">${ICON.x}</button></span>`).join('')}</div>`:''}
   </section>
   <section class="sec">
     <h3>전시공간 <span class="cnt" id="vcount"></span></h3>
@@ -863,7 +880,8 @@ function renderSettings(){
   <section class="sec" id="syncsec"></section>
   <section class="sec" id="adminsec"></section>
   <section class="sec">
-    <h3>데이터</h3>
+    <h3><button class="h3btn" data-act="admin-open" aria-label="데이터">데이터</button></h3>
+    <form class="locform" id="tokform" hidden><input class="field" id="tokin" type="password" placeholder="관리자 토큰" autocomplete="off"><button class="btn ghost locbtn" type="submit">확인</button></form>
     <p class="note" id="dstatus">${statusCache?statusText(statusCache):'상태 확인 중…'}</p>
     <p class="note">출처: 문화포털 · 서울 열린데이터광장(공공누리 1유형) · 각 공간 홈페이지</p>
     <div><button class="btn ghost danger" data-reset>내 설정 초기화</button></div>
@@ -887,7 +905,7 @@ function renderVList(){
     </li>`};
   const block=l=>{const onL=l.filter(v=>isOn(v.id)),offL=l.filter(v=>!isOn(v.id));
     return onL.map((v,i)=>row(v,i,onL)).join('')+(offL.length?`<li class="offhead">꺼 둠 <span class="mono">${offL.length}</span></li>`+offL.map((v,i)=>row(v,i,offL)).join(''):'')};
-  if(!list.length){box.innerHTML=`<li class="note">‘${esc(q)}’에 맞는 공간이 없어요.</li>`;return}
+  if(!list.length){box.innerHTML=q?`<li class="note">‘${esc(q)}’ 없음</li>`:'';return}
   if(q){box.innerHTML=block(list);observeVenueRows(box);return}
   // 지역별로 묶음. 지역 순서는 기준 위치에서 가까운 공간이 있는 지역부터, 지역 안은 고른 정렬 그대로
   const groups=new Map();
@@ -929,16 +947,10 @@ async function adminApi(path,body){
 let pv=null,srcCache=[];
 function renderAdmin(){
   const el=$('#adminsec');if(!el)return;
-  // 관리자 화면은 토큰을 넣은 기기나 주소에 ?admin을 붙여 열었을 때만
-  el.hidden=!adminToken&&!/admin/.test(location.search);if(el.hidden)return;
-  if(!adminToken){
-    el.innerHTML=`<h3>공간 관리</h3>
-      <form class="locform" id="tokform"><input class="field" id="tokin" type="password" placeholder="관리자 토큰" autocomplete="off"><button class="btn ghost" type="submit">확인</button></form>`;
-    return;
-  }
+  // 관리자 화면은 확인된 토큰이 있는 기기에서만 (토큰 입력은 '데이터' 제목을 누르면 나옴)
+  el.hidden=!adminToken;if(el.hidden){el.innerHTML='';return}
   el.innerHTML=`<h3>공간 관리</h3>
-    <form class="locform" id="addform"><input class="field" id="addurl" type="url" inputmode="url" placeholder="홈페이지 주소 (예: kukjegallery.com)" autocomplete="off"><button class="btn" type="submit">진단</button></form>
-    <p class="note">홈페이지를 읽어 이름·주소·전시 페이지를 찾고, 실제로 전시를 뽑아 보여줘요. 10~40초 걸려요.</p>
+    <form class="locform" id="addform"><input class="field" id="addurl" type="url" inputmode="url" placeholder="홈페이지 주소" autocomplete="off"><button class="btn locbtn" type="submit">진단</button></form>
     <div id="probebox"></div>
     <details id="srcdetails"><summary>등록된 공간 <span class="mono" id="srccount">…</span></summary><div id="srclist"><p class="note">불러오는 중…</p></div></details>
     <details id="dupdetails"><summary>공간 중복 후보 <span class="mono" id="dupcount">…</span></summary><p class="note">한 번 정하면 계속 유지돼요. 합치면 다음 갱신부터 한 공간으로, ‘다른 공간’을 고르면 다시 후보에 안 나와요.</p><div id="duplist"><p class="note">불러오는 중…</p></div></details>
@@ -1151,7 +1163,7 @@ async function searchPlace(q){
   try{
     const o=origin();const r=await api('/api/geocode?q='+encodeURIComponent(q)+`&lat=${o.lat}&lng=${o.lng}`);
     geoResults=r.places||[];
-    box.innerHTML=geoResults.length?geoResults.map((pl,i)=>`<li class="arow"><div class="vtext"><strong>${esc(pl.name)}</strong>${pl.addr?`<small>${esc(pl.addr)}</small>`:''}</div><button class="btn ghost" data-place="${i}">선택</button></li>`).join('')
+    box.innerHTML=geoResults.length?geoResults.map((pl,i)=>`<li class="arow"><div class="vtext"><strong>${esc(pl.name)}</strong>${pl.addr?`<small>${esc(pl.addr)}</small>`:''}</div><button class="btn ghost sm" data-place="${i}">선택</button></li>`).join('')+`<li class="arow clr"><button class="linkbtn" data-act="locres-clear">검색 결과 닫기</button></li>`
       :`<li class="note">‘${esc(q)}’를 찾지 못했어요. 동 이름이나 도로명 주소로 다시 입력해 보세요.</li>`;
   }catch(err){box.innerHTML=`<li class="note">${esc(err.message)}</li>`}
 }
@@ -1162,9 +1174,10 @@ document.addEventListener('click',ev=>{
   const t=ev.target.closest('button');if(!t)return;
   const d=t.dataset;
   if(d.tab){show(d.tab);return}
-  if(d.goto){show(d.goto);return}
+  if(d.goto){show(d.goto);const v=$('#view-'+d.goto);if(v)v.scrollTop=0;return}
   if(d.star){toggleStar(d.star);return}
   if(d.visit){toggleVisit(d.visit);return}
+  if(d.act==='admin-open'){if(adminToken)return;const f=$('#tokform');if(f){f.hidden=!f.hidden;if(!f.hidden)$('#tokin').focus()}return}
   if(d.act==='admin-logout'){adminToken='';try{localStorage.removeItem(ADMIN_KEY)}catch(e){}pv=null;renderAdmin();return}
   if(d.act==='pv-cancel'){pv=null;renderProbe();return}
   if(d.act==='pv-geo'){pvGeo();return}
@@ -1186,6 +1199,8 @@ document.addEventListener('click',ev=>{
   if(d.act==='retry-heart'){renderHearts();return}
   if(d.act==='gps'){t.textContent='찾는 중…';refreshGps(true).then(ok=>{if(ok){near.dirty=true;toast('현재 위치 기준으로 바꿨어요')}renderSettings();updateTop()});return}
   if(d.place!==undefined){const pl=geoResults[+d.place];if(pl)usePlace(pl);return}
+  if(d.act==='locres-clear'){const b=$('#locres');if(b)b.innerHTML='';const q=$('#locq');if(q)q.value='';return}
+  if(d.recentdel!==undefined){S.loc.recent.splice(+d.recentdel,1);save();const page=$('#view-settings'),top=page.scrollTop;renderSettings();page.scrollTop=top;return}
   if(d.recent!==undefined){const pl=S.loc.recent[+d.recent];if(pl)usePlace(pl);return}
   if(d.sort){
     if(d.sort==='custom'&&S.sort!=='custom')S.order=settingsListRaw().map(v=>v.id);
@@ -1215,7 +1230,16 @@ document.addEventListener('keydown',ev=>{
 document.addEventListener('input',ev=>{if(ev.target.id==='vq')renderVList()});
 document.addEventListener('submit',ev=>{
   if(ev.target.id==='locform'){ev.preventDefault();const q=($('#locq').value||'').trim();if(q)searchPlace(q)}
-  if(ev.target.id==='tokform'){ev.preventDefault();adminToken=($('#tokin').value||'').trim();try{localStorage.setItem(ADMIN_KEY,adminToken)}catch(e){}renderAdmin()}
+  if(ev.target.id==='tokform'){ev.preventDefault();
+    const tok=($('#tokin').value||'').trim();if(!tok)return;
+    const btn=ev.target.querySelector('button');btn.disabled=true;
+    // 서버에 맞는 토큰인지 먼저 확인하고 저장
+    fetch(API+'/api/admin/sources',{headers:{'x-admin-token':tok}}).then(r=>{
+      if(!r.ok)throw new Error('토큰이 맞지 않아요');
+      adminToken=tok;try{localStorage.setItem(ADMIN_KEY,tok)}catch(e){}
+      ev.target.hidden=true;$('#tokin').value='';renderAdmin();toast('관리자 모드');
+    }).catch(e=>toast(e.message)).finally(()=>{btn.disabled=false});
+  }
   if(ev.target.id==='addform'){ev.preventDefault();const u=($('#addurl').value||'').trim();if(!u)return;pv=null;runProbe({url:u},'홈페이지를 읽고 전시 페이지를 찾는 중… (10~40초)')}
 });
 document.addEventListener('input',ev=>{if(pv&&ev.target.id&&ev.target.id.startsWith('pv-'))pv.dirty=true});
@@ -1411,7 +1435,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.42';
+const APP_VER='2026-10-03.43';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
