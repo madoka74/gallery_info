@@ -19,10 +19,11 @@ import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, del
 const CULTURE_URL = 'https://apis.data.go.kr/B553457/cultureinfo/period2';
 const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(key)}/json/culturalEventInfo`;
 // 수집 범위: 수도권 (서울·인천·경기). 넓히면 KV 데이터가 커져 요청당 CPU가 늘어남
-const BOX = { latMin: 36.90, latMax: 38.00, lngMin: 126.30, lngMax: 127.85 };
+// 전국(제주 포함). 좌표가 바다 한가운데 등 엉뚱한 값인 것만 거름
+const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.28';
+const VERSION = '2026-10-02.29';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -124,6 +125,14 @@ async function route(url, req, env, ctx) {
   if (p === '/api/sources') {
     const list = await crawlStatus(env);
     return json({ total: list.length, done: list.filter(s => s.ok).length, failed: list.filter(s => s.ok === false).length, pending: list.filter(s => s.ok === null).length, exhibitions: list.reduce((n, s) => n + s.count, 0), sources: list });
+  }
+  if (p === '/api/places') {
+    // ?q=공예 → 공공 API 원본의 장소 표기와 그걸 어떻게 나눴는지 (공간 이름 정리 점검용)
+    const qq = String(url.searchParams.get('q') || '').replace(/\s+/g, '');
+    const api = (await env.CACHE.get(API_KEY, 'json')) || { items: [] };
+    const rows = api.items.filter(it => it.place && it.place.replace(/\s+/g, '').includes(qq))
+      .map(it => ({ place: it.place, parsed: placeParts(it.place), title: it.title, src: it.src, lat: it.lat, lng: it.lng, end: it.end }));
+    return json({ count: rows.length, rows: rows.slice(0, 80) });
   }
   if (p === '/api/debug') {
     return new Response(await debugRaw(url.searchParams.get('src'), env), { headers: { 'content-type': 'text/plain; charset=utf-8', ...cors() } });
@@ -634,9 +643,15 @@ function placeParts(p) {
     const hall = c.replace(/\(?\s*DDP\s*\)?|동대문\s*디자인\s*플라자/gi, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
     return { name: x.name, hall };
   }
-  const base = c.replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s+/g, ' ').trim();
-  const name = base.replace(SUBLOC, '').replace(/\s+/g, ' ').trim();
-  const hall = base.slice(name.length).trim();
+  // 'B1, B2층', '1, 2층', '1~3층', '1,' 같은 층 목록: 쉼표·물결을 띄어쓰기로 바꾸고 꼬리의 숫자 목록을 함께 떼어 냄
+  const listy = /\d\s*[,~]/.test(c);
+  const base = c.replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s*[,~]\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  let name = base.replace(SUBLOC, '').replace(/\s+/g, ' ').trim();
+  name = name.replace(/(?:\s+B\d+)+$/i, '');                 // 'B1' 같은 지하층 표기
+  if (listy) name = name.replace(/(?:\s+\d+)+$/, '');         // 목록에서 남은 '1'
+  name = name.trim();
+  const orig = c.replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s+/g, ' ').trim();   // 관 표시는 쉼표를 살린 원래 표기로
+  const hall = (orig.startsWith(name) ? orig : base).slice(name.length).replace(/^[\s,]+|[\s,]+$/g, '').trim();
   return { name, hall };
 }
 function placeName(p) { return placeParts(p).name; }
