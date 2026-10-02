@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#E8EBEA">
 <title>가까운 전시</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="가까운 전시">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@700;800&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -178,9 +182,14 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .syncstat .dot{width:8px;height:8px;border-radius:50%;background:#2DB55D;flex:none}
 .syncstat .dot.err{background:var(--warn)}
 .codebox{display:flex;gap:8px;align-items:center;margin-top:10px}
-.codebox input{flex:1;min-width:0;font-family:var(--f-mono);font-size:16px;letter-spacing:.04em}
+.codebox input{flex:1;min-width:0;font-family:var(--f-mono);font-size:16px;letter-spacing:.04em;text-transform:uppercase}
 .syncrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.kc{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.syncline{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-block:6px}
+.syncstat .dot.off{background:var(--muted)}
+.linkbtn{background:none;border:0;padding:4px 0;font-size:13px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+#restoredet{margin-top:8px}
+#restoredet summary{font-size:14px;padding-block:6px;cursor:pointer}
+.note.bad{color:var(--warn)}
 .restorebox{margin-top:12px;padding:12px;border-radius:12px;background:var(--chip);display:flex;flex-direction:column;gap:8px}
 .restorebox p{margin:0;font-size:13px}
 .duprow{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
@@ -1128,7 +1137,7 @@ async function syncNow(keepalive){
   if(!SY.on||syncBusy||restoring)return;
   const payload=syncPayload(),h=hashStr(JSON.stringify(payload));
   if(h===SY.last)return;
-  syncBusy=true;
+  syncBusy=true;paintSyncStat();
   try{
     let res=await fetch(API+'/api/sync/save',{method:'POST',keepalive:!!keepalive,headers:{'content-type':'application/json'},body:JSON.stringify({code:SY.code,data:payload,base:SY.base||null})});
     let d=await res.json().catch(()=>({}));
@@ -1171,46 +1180,36 @@ const countsOf=r=>({stars:(r.stars||[]).length,visited:Object.keys(r.visited||{}
 let pendingRestore=null; // {data, savedAt, code?, from:'code'|'file'}
 function paintSyncStat(){
   const el=$('#syncstat');if(!el)return;
-  el.innerHTML=SY.on
-    ?`<span class="dot${syncErr?' err':''}"></span>${syncErr?`백업 실패: ${esc(syncErr)} · 자동으로 다시 시도해요`:SY.at?`자동 백업 켜짐 · 마지막 저장 ${fmtWhen(SY.at)}`:'자동 백업 켜짐 · 아직 저장 전'}`
-    :`<span class="dot err"></span>자동 백업 꺼짐`;
+  el.innerHTML=!SY.on?`<span class="dot off"></span>자동 백업 꺼짐`
+    :syncErr?`<span class="dot err"></span>저장 실패 · 잠시 뒤 다시 시도해요`
+    :syncBusy?`<span class="dot"></span>저장하는 중…`
+    :`<span class="dot"></span>자동 백업 중${SY.at?` · ${fmtWhen(SY.at)} 저장`:''}`;
 }
 function fmtWhen(iso){const t=new Date(iso);return `${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`}
 function renderSync(){
   const el=$('#syncsec');if(!el)return;
-  const c=countsOf(S);
-  el.innerHTML=`<h3>백업·복원</h3>
-    <div class="syncstat" id="syncstat"></div>
-    <p class="note">하트·켜고 끄기·정렬, 별표 ${c.stars}개, 관람 기록 ${c.visited}개를 이 기기의 <b>복원 코드</b>로 서버에 자동 저장해요. 위치 기록은 저장하지 않아요. 아이폰 사파리는 오래 안 쓰면 기기 저장 데이터를 지울 수 있으니, 코드를 꼭 따로 보관해 두세요. 코드를 아는 사람은 이 기록을 볼 수 있어요.</p>
-    <form class="codebox" id="kcform" method="post" action="/api/sync/keychain" target="kcframe">
-      <input class="kc" type="text" name="username" autocomplete="username" value="가까운 전시 백업" tabindex="-1" aria-hidden="true">
-      <input class="field" id="mycode" name="password" type="password" autocomplete="new-password" value="${esc(fmtCode(SY.code))}" aria-label="내 복원 코드">
-      <button class="btn ghost sm" type="button" data-act="code-show">보기</button>
-    </form>
-    <iframe name="kcframe" class="kc" title="키체인 저장" tabindex="-1"></iframe>
-    <div class="syncrow">
-      <button class="btn sm" data-act="code-keychain">키체인에 저장</button>
-      <button class="btn ghost sm" data-act="code-copy">코드 복사</button>
-      ${navigator.share?'<button class="btn ghost sm" data-act="code-share">메모 등에 보관</button>':''}
-      <button class="btn ghost sm" data-act="sync-now">지금 백업</button>
+  const empty=!countsOf(S).stars&&!countsOf(S).visited&&!countsOf(S).hearts;
+  const standalone=window.navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
+  el.innerHTML=`<h3>백업</h3>
+    <div class="syncline">
+      <div class="syncstat" id="syncstat"></div>
+      <label class="switch"><input type="checkbox" id="syncon" ${SY.on?'checked':''}><span class="track"></span><span class="sr">자동 백업</span></label>
     </div>
-    <details style="margin-top:14px"><summary>다른 기기의 기록 가져오기</summary>
-      <form class="codebox" id="restoreform" autocomplete="on">
-        <input class="kc" type="text" name="username" autocomplete="username" value="가까운 전시 백업" tabindex="-1" aria-hidden="true">
-        <input class="field" id="restorecode" name="password" type="password" autocomplete="current-password" placeholder="복원 코드 (키체인에서 자동 입력)">
-        <button class="btn sm" type="submit">불러오기</button>
-      </form>
-      <div class="syncrow">
-        <button class="btn ghost sm" data-act="file-export">파일로 내보내기</button>
-        <label class="btn ghost sm" style="cursor:pointer">파일에서 가져오기<input type="file" id="importfile" accept="application/json,.json" hidden></label>
-        <button class="btn ghost sm" data-act="sync-toggle">${SY.on?'자동 백업 끄기':'자동 백업 켜기'}</button>
-      </div>
+    <div class="syncline">
+      <span class="note" style="margin:0">복원 코드 <span class="mono">····${esc(SY.code.slice(-4))}</span></span>
+      <button class="btn ghost sm" data-act="code-copy">코드 복사</button>
+    </div>
+    ${standalone?'':`<p class="note">아이폰 사파리는 오래 안 쓰면 기록을 지울 수 있어요. 공유 버튼 → ‘홈 화면에 추가’로 열면 지워지지 않아요. 복원 코드는 복사해서 메모 등에 한 번 보관해 두세요.</p>`}
+    <details id="restoredet" ${empty||pendingRestore?'open':''}><summary>기록 가져오기</summary>
+      <form class="codebox" id="restoreform"><input class="field" id="restorecode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="다른 기기나 예전 복원 코드"><button class="btn sm" type="submit" id="restorebtn">불러오기</button></form>
       <div id="restorebox"></div>
+      <div class="syncrow"><button class="linkbtn" data-act="file-export">파일로 내보내기</button><label class="linkbtn">파일에서 가져오기<input type="file" id="importfile" accept="application/json,.json" hidden></label></div>
     </details>`;
   paintSyncStat();paintRestore();
 }
 function paintRestore(){
   const box=$('#restorebox');if(!box)return;
+  if(restoreMsg){box.innerHTML=`<p class="note ${restoreMsg.err?'bad':''}" style="margin:8px 0 0">${esc(restoreMsg.text)}</p>`;return}
   if(!pendingRestore){box.innerHTML='';return}
   const r=countsOf(pendingRestore.data),l=countsOf(S);
   box.innerHTML=`<div class="restorebox">
@@ -1220,10 +1219,16 @@ function paintRestore(){
     ${pendingRestore.code?'<p class="note">가져온 뒤에는 이 기기도 같은 코드로 백업해서, 두 기기 기록이 서로 합쳐져요.</p>':''}
   </div>`;
 }
+var restoreMsg=null;
 async function loadFromCode(code){
-  code=normCode(code);if(code.length<20){toast('복원 코드를 확인해 주세요');return}
-  try{const r=await api('/api/sync/load',{code});pendingRestore={data:r.data,savedAt:r.savedAt,code,from:'code'};paintRestore()}
-  catch(e){toast(e.message)}
+  code=normCode(code);pendingRestore=null;
+  if(code.length<20){restoreMsg={err:true,text:'복원 코드 24자리를 확인해 주세요. (띄어쓰기·하이픈은 상관없어요)'};paintRestore();return}
+  if(code===SY.code){restoreMsg={err:true,text:'이 기기의 복원 코드예요. 다른 기기나 예전 코드를 넣어 주세요.'};paintRestore();return}
+  const b=$('#restorebtn');if(b){b.disabled=true;b.textContent='찾는 중…'}
+  restoreMsg={text:'불러오는 중…'};paintRestore();
+  try{const r=await api('/api/sync/load',{code});restoreMsg=null;pendingRestore={data:r.data,savedAt:r.savedAt,code,from:'code'}}
+  catch(e){restoreMsg={err:true,text:e.message}}
+  finally{if(b){b.disabled=false;b.textContent='불러오기'}paintRestore()}
 }
 function applyRestore(mode){
   const pr=pendingRestore;if(!pr)return;
@@ -1246,30 +1251,30 @@ document.addEventListener('change',ev=>{
   if(ev.target.id!=='importfile')return;
   const f=ev.target.files&&ev.target.files[0];if(!f)return;
   f.text().then(t=>{const j=JSON.parse(t);const d=j.data||j;if(!d||(!d.stars&&!d.visited&&!d.prefs))throw new Error('가까운 전시 백업 파일이 아니에요');
-    pendingRestore={data:d,savedAt:j.exportedAt||null,from:'file'};paintRestore()}).catch(e=>toast(e.message||'파일을 읽지 못했어요'));
+    restoreMsg=null;pendingRestore={data:d,savedAt:j.exportedAt||null,from:'file'};const det=$('#restoredet');if(det)det.open=true;paintRestore()}).catch(e=>{restoreMsg={err:true,text:e.message||'파일을 읽지 못했어요'};paintRestore()});
   ev.target.value='';
+});
+document.addEventListener('change',ev=>{
+  if(ev.target.id!=='syncon')return;
+  SY.on=ev.target.checked;saveSY();paintSyncStat();if(SY.on){SY.last='';syncNow()}
+  toast(SY.on?'자동 백업을 켰어요':'자동 백업을 껐어요. 이 기기에만 기록이 남아요');
 });
 document.addEventListener('submit',ev=>{
   if(ev.target.id==='restoreform'){ev.preventDefault();loadFromCode(($('#restorecode')||{}).value)}
 });
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('button');if(!t||!t.dataset.act)return;const a=t.dataset.act;
-  if(a==='code-show'){const i=$('#mycode');if(i){i.type=i.type==='password'?'text':'password';t.textContent=i.type==='password'?'보기':'숨기기'}}
-  else if(a==='code-keychain'){const f=$('#kcform');if(f){f.submit();toast('아이폰이 암호 저장을 물으면 ‘저장’을 누르세요')}}
-  else if(a==='code-copy'){(navigator.clipboard?navigator.clipboard.writeText(fmtCode(SY.code)):Promise.reject()).then(()=>toast('복원 코드를 복사했어요')).catch(()=>{const i=$('#mycode');if(i){i.type='text';i.select()}toast('코드를 길게 눌러 복사하세요')})}
-  else if(a==='code-share'){navigator.share({title:'가까운 전시 복원 코드',text:`가까운 전시 복원 코드: ${fmtCode(SY.code)}`}).catch(()=>{})}
-  else if(a==='sync-now'){SY.last='';syncNow().then(()=>toast(syncErr?'백업 실패: '+syncErr:'백업했어요'))}
-  else if(a==='sync-toggle'){SY.on=!SY.on;saveSY();renderSync();if(SY.on){SY.last='';syncNow()}}
+  if(a==='code-copy'){(navigator.clipboard?navigator.clipboard.writeText(fmtCode(SY.code)):Promise.reject()).then(()=>toast('복원 코드를 복사했어요. 메모 등에 붙여 두세요')).catch(()=>{window.prompt('복원 코드 (길게 눌러 복사하세요)',fmtCode(SY.code))})}
   else if(a==='file-export')exportFile();
   else if(a==='restore-merge')applyRestore('merge');
   else if(a==='restore-replace')armed(t,'한 번 더 누르면 바꿔요',()=>applyRestore('replace'));
-  else if(a==='restore-cancel'){pendingRestore=null;paintRestore()}
+  else if(a==='restore-cancel'){pendingRestore=null;restoreMsg=null;paintRestore()}
 });
 
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-02.36';
+const APP_VER='2026-10-02.37';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
