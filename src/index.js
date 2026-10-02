@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.32';
+const VERSION = '2026-10-02.33';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -33,7 +33,14 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     if (!url.pathname.startsWith('/api/')) {
-      return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
+      if (!env.ASSETS) return new Response('Not found', { status: 404 });
+      const res = await env.ASSETS.fetch(req);
+      // 화면(html)은 캐시하지 않음 → 배포하면 바로 새 화면
+      if ((res.headers.get('content-type') || '').includes('text/html')) {
+        const h = new Headers(res.headers); h.set('cache-control', 'no-cache');
+        return new Response(res.body, { status: res.status, headers: h });
+      }
+      return res;
     }
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors() });
     try {
@@ -106,6 +113,23 @@ async function route(url, req, env, ctx) {
     const stats = await rebuild(env);
     return json({ ok: true, stats });
   }
+  if (p === '/api/admin/venues/rule') {
+    // {a: 공간 id, b: 공간 id, action: 'merge'|'split'|'clear'} → 두 공간을 합치거나, 다른 공간으로 고정
+    const ds0 = await getDataset(env, ctx);
+    const va = ds0.venues.find(v => v.id === body.a || (v.prevIds || []).includes(body.a));
+    const vb = ds0.venues.find(v => v.id === body.b || (v.prevIds || []).includes(body.b));
+    if (!va || !vb) return json({ error: '공간을 찾지 못했어요' }, 404);
+    const rules = (await env.CACHE.get(RULES_KEY, 'json')) || { merge: [], split: [] };
+    const same = r => (r.a.some(k => va.keys.includes(k)) && r.b.some(k => vb.keys.includes(k))) || (r.a.some(k => vb.keys.includes(k)) && r.b.some(k => va.keys.includes(k)));
+    rules.merge = rules.merge.filter(r => !same(r)); rules.split = rules.split.filter(r => !same(r));
+    if (body.action === 'merge' || body.action === 'split') rules[body.action].push({ a: va.keys, b: vb.keys, names: [va.name, vb.name], at: new Date().toISOString() });
+    await env.CACHE.put(RULES_KEY, JSON.stringify(rules));
+    const stats = await rebuild(env);
+    return json({ ok: true, rules: { merge: rules.merge.length, split: rules.split.length }, stats });
+  }
+  if (p === '/api/admin/venues/rules') {
+    return json((await env.CACHE.get(RULES_KEY, 'json')) || { merge: [], split: [] });
+  }
   if (p === '/api/refresh') {
     // 공공 API 다시 받기 + 데이터 다시 묶기 (홈페이지 수집은 /api/crawl)
     await refreshApis(env);
@@ -161,7 +185,12 @@ async function route(url, req, env, ctx) {
   if (p === '/api/dupes') {
     if (!isAdmin(url, env, req)) return json({ error: '관리자 토큰이 맞지 않습니다' }, 403);
     const active = ds.venues.filter(v => v.ex.some(e => e.end >= today));
-    return json({ venues: active.length, candidates: dupeCandidates(active) });
+    VENUE_RULES = (await env.CACHE.get(RULES_KEY, 'json')) || { merge: [], split: [] };
+    const cands = dupeCandidates(active).filter(c => {
+      const a = active.find(v => v.id === c.aId), b = active.find(v => v.id === c.bId);
+      return ruleFor({ members: a.keys || [] }, { members: b.keys || [] }) !== 'split';
+    });
+    return json({ venues: active.length, candidates: cands });
   }
 
   if (p === '/api/status') {
@@ -184,7 +213,7 @@ async function route(url, req, env, ctx) {
   if (p === '/api/allvenues') {
     // 설정 탭용: 지금 열린 전시가 있는 모든 공간 (전시 목록 없이 요약만)
     const venues = ds.venues
-      .map(v => ({ id: v.id, name: v.name, addr: v.addr, lat: v.lat, lng: v.lng, active: v.ex.filter(e => e.end >= today).length, firstSeen: v.firstSeen, distance: Math.round(haversine(lat, lng, v.lat, v.lng)) }))
+      .map(v => ({ id: v.id, name: v.name, addr: v.addr, lat: v.lat, lng: v.lng, active: v.ex.filter(e => e.end >= today).length, firstSeen: v.firstSeen, prevIds: v.prevIds || [], distance: Math.round(haversine(lat, lng, v.lat, v.lng)) }))
       .filter(v => v.active)
       .sort((a, b) => a.distance - b.distance);
     return json({ venues });
@@ -192,8 +221,12 @@ async function route(url, req, env, ctx) {
 
   if (p === '/api/venues') {
     const ids = Array.isArray(body.ids) ? body.ids : String(q('ids') || '').split(',').filter(Boolean);
-    const map = new Map(ds.venues.map(v => [v.id, v]));
-    const venues = ids.map(id => map.get(id)).filter(Boolean).map(v => withActive(v, today, lat, lng));
+    // 예전 id로 물어도 지금 공간을 돌려줌 (응답의 id·prevIds로 앱이 스스로 옮김)
+    const map = new Map();
+    ds.venues.forEach(v => (v.prevIds || []).forEach(x => { if (!map.has(x)) map.set(x, v); }));
+    ds.venues.forEach(v => map.set(v.id, v));
+    const seen = new Set();
+    const venues = ids.map(id => map.get(id)).filter(v => v && !seen.has(v.id) && seen.add(v.id)).map(v => withActive(v, today, lat, lng));
     return json({ venues, missing: ids.filter(id => !map.has(id)) });
   }
 
@@ -299,11 +332,39 @@ async function rebuild(env) {
   const all = [...api.items, ...crawled];
   const active = all.filter(it => it.end >= today);
   stats.endedDropped = all.length - active.length;
+  VENUE_RULES = (await env.CACHE.get(RULES_KEY, 'json')) || { merge: [], split: [] };
   const venues = buildVenues(active, stats);
+  await assignVenueIds(env, venues, stats);
   stats.newToday = await stampFirstSeen(env, venues);
   stats.newVenuesToday = venues.filter(v => v.firstSeen > new Date(Date.now() - 86400e3).toISOString()).length;
   await env.CACHE.put(DATASET_KEY, JSON.stringify({ updatedAt: new Date().toISOString(), venues, stats }));
   return stats;
+}
+
+// 공간 id를 한 번 정하면 계속 유지: 공간을 이루는 이름 키마다 id를 기록해 두고 다음에도 같은 id를 씀
+// (이름 표기가 바뀌거나 다른 표기가 합쳐져 대표 이름이 바뀌어도 하트·순서·관람 기록이 끊기지 않게)
+const VID_KEY = 'vid:v1', RULES_KEY = 'venuerules:v1';
+async function assignVenueIds(env, venues, stats) {
+  const map = (await env.CACHE.get(VID_KEY, 'json')) || {};
+  const taken = new Set();
+  // 수집 공간·큰 묶음부터 id를 고름 (같은 예전 id를 두 공간이 다투면 먼저 고른 쪽이 가짐)
+  const order = [...venues].sort((a, b) => b.keys.length - a.keys.length);
+  for (const v of order) {
+    const fresh = 'p' + hash(v.keys[0]);
+    const known = v.keys.map(k => map[k]).filter(Boolean);
+    const id = known.find(x => !taken.has(x)) || (!taken.has(fresh) ? fresh : 'p' + hash(v.keys.join('|')));
+    taken.add(id);
+    const prev = new Set([...known, ...v.keys.map(k => 'p' + hash(k)), ...v.legacy.map(k => 'p' + hash(k))]);
+    prev.delete(id);
+    v.id = id; v.prevIds = [...prev].slice(0, 40);
+    v.keys.forEach(k => { map[k] = id; });
+    // 표시 이름도 한 번 정하면 유지 (그 표기가 계속 쓰이는 동안)
+    if (!v.fixedName && map['@' + id] && v.allNames.includes(map['@' + id])) v.name = map['@' + id];
+    else map['@' + id] = v.name;
+    delete v.legacy; delete v.allNames; delete v.fixedName;
+  }
+  await env.CACHE.put(VID_KEY, JSON.stringify(map));
+  stats.venueIdsKnown = Object.keys(map).length;
 }
 
 // sources.js에 좌표 없이 주소만 적은 공간: 주소(안 되면 이름)로 좌표를 찾아 KV에 저장. 한 번에 몇 곳씩
@@ -485,7 +546,7 @@ function buildVenues(items, stats) {
     if (parts.hall && !it.hall) it.hall = parts.hall;
     const k = norm(parts.name);
     if (!k) { if (parts.hall) subs.push(it); continue; }
-    if (!groups.has(k)) groups.set(k, { key: k, names: [], addr: '', lat: it.lat, lng: it.lng, ex: [], crawl: null, aliases: [] });
+    if (!groups.has(k)) groups.set(k, { key: k, members: [k], names: [], addr: '', lat: it.lat, lng: it.lng, ex: [], crawl: null, aliases: [] });
     const g = groups.get(k);
     g.names.push(placeName(it.place)); g.addr ||= it.addr; g.ex.push(it);
     if (it.src === 'crawl' && !g.crawl) { g.crawl = it.place; g.aliases = (it.aliases || []).map(simKey).filter(Boolean); }
@@ -496,7 +557,7 @@ function buildVenues(items, stats) {
   for (const g of list) {
     const host = merged.find(m => sameVenue(m, g));
     if (host) {
-      host.ex.push(...g.ex); host.names.push(...g.names); host.addr ||= g.addr;
+      host.ex.push(...g.ex); host.names.push(...g.names); host.members.push(...g.members); host.addr ||= g.addr;
       // 수집 공간 좌표는 근사값이라, 공공 API 좌표가 있으면 그걸 씀
       if (host.crawl && !g.crawl && !host.preciseCoords) { host.lat = g.lat; host.lng = g.lng; host.preciseCoords = true; }
     } else merged.push(g);
@@ -519,9 +580,12 @@ function buildVenues(items, stats) {
   }
   stats.orphansRescued = rescued; stats.orphansDropped = orphans.length - rescued;
   const venues = merged.map(g => ({
-    id: 'p' + hash(g.key),
+    id: 'p' + hash(g.key),   // 임시. rebuild에서 예전 id를 이어 붙임 (assignVenueIds)
     name: g.crawl || mostCommon(g.names),
     addr: g.addr, lat: +g.lat.toFixed(6), lng: +g.lng.toFixed(6),
+    keys: [...new Set(g.members)], fixedName: !!g.crawl, allNames: [...new Set(g.names)],
+    // 예전 버전들이 쓰던 공간 키(장소 원문 기준) → 예전 id 후보
+    legacy: [...new Set(g.ex.flatMap(e => e.place ? [norm(legacyPlaceName(e.place)), norm(clean(e.place).replace(/\(.*?\)|\[.*?\]/g, ' '))] : []))].filter(Boolean),
     ex: dedupeTitles(g.ex).map(({ place, addr, lat, lng, ...e }) => e)
   }));
   stats.venues = venues.length; stats.exhibitions = venues.reduce((n, v) => n + v.ex.length, 0);
@@ -533,7 +597,20 @@ function simKey(name) {
   return norm(String(name || '').replace(/\(재\)|재단법인/g, ''))
     .replace(/(서울관|서울점|서울|본관|본점|seoul)$/i, '');
 }
+// 관리자가 정한 합치기/나누기 규칙 (rebuild에서 KV로 읽어 둠). 공간 키 묶음끼리 짝으로 저장
+let VENUE_RULES = { merge: [], split: [] };
+function ruleFor(a, b) {
+  const A = a.members || [a.key], B = b.members || [b.key];
+  const hit = r => (r.a.some(k => A.includes(k)) && r.b.some(k => B.includes(k))) || (r.a.some(k => B.includes(k)) && r.b.some(k => A.includes(k)));
+  if (VENUE_RULES.split.some(hit)) return 'split';
+  if (VENUE_RULES.merge.some(hit)) return 'merge';
+  return '';
+}
 function sameVenue(a, b) {
+  const rule = ruleFor(a, b);
+  if (rule) return rule === 'merge';
+  // 홈페이지 수집 공간 두 곳은 sources.js에서 일부러 나눈 것이라 자동으로 합치지 않음 (예술의전당 3관 등)
+  if (a.crawl && b.crawl && a.crawl !== b.crawl) return false;
   const d = haversine(a.lat, a.lng, b.lat, b.lng);
   const ka = simKey(a.key), kb = simKey(b.key);
   if (!ka || !kb) return false;
@@ -544,7 +621,15 @@ function sameVenue(a, b) {
   // 거의 같은 자리 + 흔한 단어(미술관·갤러리 등)를 뺀 이름이 같음 ('서울시립 남서울미술관' = '서울시립미술관 남서울미술관')
   // 한가람미술관/한가람디자인미술관처럼 같은 단지의 다른 관은 이름이 달라서 합쳐지지 않음
   const core = k => simKey(k).replace(GENERIC, '');
-  return d < 60 && core(a.key) === core(b.key) && core(a.key).length >= 2;
+  if (d < 60 && core(a.key) === core(b.key) && core(a.key).length >= 2) return true;
+  // 가까운 자리(150m) + 이름이 많이 닮음 ('서울공예박물관' ~ '서울시립 공예박물관' 등 표기 흔들림)
+  return d < 150 && nameSim(a.key, b.key) >= 0.6;
+}
+// 예전(2026-10-02.27까지) 공간 이름 정리 방식: 예전 id를 찾아 이어 주는 데만 씀
+function legacyPlaceName(p) {
+  return clean(p).replace(/\(.*?\)|\[.*?\]/g, ' ')
+    .replace(/\s+(지하\s*)?(B?\d+\s*층|B\d+|\d+\s*F|제?\s*\d+\s*전시실|[A-Za-z가-힣]*\s*전시실\s*\d*|로비|야외.*|\d+\s*관(?=\s|$)).*$/i, '')
+    .replace(/\s+/g, ' ').trim();
 }
 // 이름 유사도 (두 글자 조각 겹침). '갤러리·미술관' 같은 흔한 단어는 빼고 비교
 const GENERIC = /갤러리|미술관|박물관|아트센터|센터|문화|gallery|museum|art/gi;
