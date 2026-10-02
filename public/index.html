@@ -360,7 +360,66 @@ async function api(path,body){
   const res=await fetch(API+path,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({lat:o.lat,lng:o.lng,...body})}:{});
   let data; try{ data=await res.json(); }catch(e){ throw new Error(`서버 응답을 읽지 못했어요 (${res.status})`); }
   if(!res.ok) throw new Error(data.error||`서버 오류 (${res.status})`);
+  // 서버에서 받은 공간·전시로 내 저장 데이터(하트·순서·별표·관람 기록)를 늘 최신 id·내용에 맞춤
+  if(Array.isArray(data.venues)&&data.venues.length){ if(reconcile(data.venues)) save(); }
   return data;
+}
+
+/* ---------- 내 저장 데이터 맞추기 ----------
+   공간 id가 바뀌면(이름 표기 정리·합치기) 서버가 예전 id(prevIds)를 함께 알려 줌 → 하트·켜고 끄기·순서·별표·관람 기록을 새 id로 옮김
+   별표·관람 기록은 담을 때의 사본이라, 서버의 같은 전시가 고쳐지면(제목·기간·포스터) 사본도 같이 고침 */
+const SNAP_FIELDS=['title','sub','artist','start','end','poster','link','fee','hall','nk','alt'];
+function reconcile(venues){
+  let ch=false;
+  for(const v of venues){
+    const sv=slim(v);
+    for(const pid of v.prevIds||[]){
+      if(pid===v.id)continue;
+      if(S.prefs[pid]){
+        const o=S.prefs[pid],n=S.prefs[v.id];
+        S.prefs[v.id]={heart:!!(o.heart||(n&&n.heart)),on:!(o.on===false||(n&&n.on===false)),v:sv};
+        delete S.prefs[pid];ch=true;
+      }
+      const i=S.order.indexOf(pid);
+      if(i>=0){if(S.order.includes(v.id))S.order.splice(i,1);else S.order[i]=v.id;ch=true}
+      if(vseenSet.has(pid)&&!vseenSet.has(v.id)){vseenSet.add(v.id);S.vseen=[...vseenSet];ch=true}
+    }
+    const ids=new Set([v.id,...(v.prevIds||[])]);
+    for(const e of v.ex||[]){
+      const differs=x=>SNAP_FIELDS.some(k=>JSON.stringify(x[k]??'')!==JSON.stringify(e[k]??''))||(x.id!==e.id);
+      for(const s of S.stars){
+        if(s.e.id===e.id||(s.v&&ids.has(s.v.id)&&sameEx(s.e,s.v,e,v))){
+          if(differs(s.e)||!s.v||s.v.id!==v.id){s.e=e;s.v=sv;ch=true}
+        }
+      }
+      for(const [k,r] of Object.entries(S.visited)){
+        if(!r||!r.e)continue;
+        if(r.e.id===e.id||(r.v&&ids.has(r.v.id)&&sameEx(r.e,r.v,e,v))){
+          if(differs(r.e)||!r.v||r.v.id!==v.id){r.e=e;r.v=sv;ch=true}
+          const nk=keyOf(e);
+          if(nk!==k){const ex=S.visited[nk];if(!ex||ex.at>r.at)S.visited[nk]=r;delete S.visited[k];ch=true}
+        }
+      }
+    }
+    // 하트 공간 이름·좌표 사본도 최신으로
+    if(S.prefs[v.id]&&JSON.stringify(S.prefs[v.id].v)!==JSON.stringify(sv)){S.prefs[v.id].v=sv;ch=true}
+  }
+  if(ch){ // 같은 전시를 두 번 담게 된 경우 하나로
+    const seen=new Set();S.stars=S.stars.filter(s=>!seen.has(s.e.id)&&seen.add(s.e.id));
+  }
+  return ch;
+}
+// 서버 목록에 없는 예전 공간(하트·끔 설정만 남은 것): 300m 안에 이름이 닮은 공간이 있으면 그리로 옮김
+function adoptOrphans(list){
+  const have=new Set(list.map(v=>v.id));let ch=false;
+  const core=s=>tkey(s).replace(/서울관|서울점|본관|본점|미술관|갤러리|박물관|아트센터|센터|museum|gallery/g,'');
+  for(const [id,p] of Object.entries(S.prefs)){
+    if(have.has(id)||!p.v||!isFinite(p.v.lat))continue;
+    const a=core(p.v.name);
+    const m=list.find(v=>{const dy=(v.lat-p.v.lat)*111e3,dx=(v.lng-p.v.lng)*88e3;if(dx*dx+dy*dy>300*300)return false;const b=core(v.name);return a.length>=2&&b.length>=2&&(a.includes(b)||b.includes(a))});
+    if(m){ch=reconcile([{...m,prevIds:[id]}])||ch}
+  }
+  return ch;
 }
 
 const ICON={
@@ -540,7 +599,7 @@ async function loadAll(force){
   const o=origin(),k=o.lat+','+o.lng;
   if(allVenues&&allKey===k&&!force)return allVenues;
   const r=await api(`/api/allvenues?lat=${o.lat}&lng=${o.lng}`);
-  allVenues=r.venues;allKey=k;register(allVenues);updateSetBadge();
+  allVenues=r.venues;allKey=k;if(adoptOrphans(allVenues))save();register(allVenues);updateSetBadge();
   return allVenues;
 }
 
@@ -631,7 +690,7 @@ async function renderHearts(){
 }
 
 /* ---------- MY: 담은 전시(스냅샷)를 같은 카드로, 종료일 빠른 순 ---------- */
-function renderMy(){
+function renderMy(fromSync){
   const el=$('#view-my');
   const vlist=Object.values(S.visited).filter(r=>r&&r.e);
   const isVisited=s=>!!S.visited[keyOf(s.e)]||vlist.some(r=>sameEx(s.e,s.v||{},r.e,r.v||{}));
@@ -644,6 +703,17 @@ function renderMy(){
     +(starred.length?`<div class="loader">가 볼 전시 ${starred.length}개 · 종료일 빠른 순</div>`:'')
     +(log.length?`<div class="loader">관람 기록 ${log.length}개 · 최근에 본 순</div>`+log.map(r=>cardHTML(r.e,r.v)).join(''):'');
   el.scrollTop=0;observePosters(el);
+  if(!fromSync)syncMy();
+}
+// MY를 열 때 담아 둔 전시의 최신 정보를 서버에서 받아 사본을 고침 (바뀐 게 있으면 다시 그림)
+let mySyncAt=0;
+async function syncMy(){
+  if(Date.now()-mySyncAt<30e3)return;mySyncAt=Date.now();
+  const ids=[...new Set([...S.stars.map(s=>s.v&&s.v.id),...Object.values(S.visited).map(r=>r&&r.v&&r.v.id)].filter(Boolean))];
+  if(!ids.length)return;
+  const before=JSON.stringify([S.stars,S.visited]);
+  try{await api('/api/venues',{ids})}catch(e){return}
+  if(JSON.stringify([S.stars,S.visited])!==before&&tab==='my'){const el=$('#view-my'),top=el.scrollTop;renderMy(true);el.scrollTop=top;updateTop()}
 }
 
 /* ---------- 설정 ---------- */
@@ -749,8 +819,19 @@ function renderAdmin(){
     <p class="note">홈페이지를 읽어 이름·주소·전시 페이지를 찾고, 실제로 전시를 뽑아 보여줘요. 10~40초 걸려요.</p>
     <div id="probebox"></div>
     <details id="srcdetails"><summary>등록된 공간 <span class="mono" id="srccount">…</span></summary><div id="srclist"><p class="note">불러오는 중…</p></div></details>
+    <details id="dupdetails"><summary>공간 중복 후보 <span class="mono" id="dupcount">…</span></summary><p class="note">한 번 정하면 계속 유지돼요. 합치면 다음 갱신부터 한 공간으로, ‘다른 공간’을 고르면 다시 후보에 안 나와요.</p><div id="duplist"><p class="note">불러오는 중…</p></div></details>
     <div><button class="btn ghost sm" data-act="admin-logout">이 기기에서 관리자 토큰 지우기</button></div>`;
-  renderProbe();loadSrcList();
+  renderProbe();loadSrcList();loadDupes();
+}
+async function loadDupes(){
+  const box=$('#duplist');if(!box)return;
+  try{
+    const r=await adminApi('/api/dupes');
+    const c=$('#dupcount');if(c)c.textContent=r.candidates.length;
+    box.innerHTML=r.candidates.length?r.candidates.map(x=>`<div class="srow"><div class="vtext"><strong>${esc(x.a)} ↔ ${esc(x.b)}</strong><small><span class="mono">${x.meters}m · 닮음 ${x.similarity}</span></small></div>
+      <button class="btn ghost sm" data-vrule="merge" data-a="${esc(x.aId)}" data-b="${esc(x.bId)}">합치기</button><button class="btn ghost sm" data-vrule="split" data-a="${esc(x.aId)}" data-b="${esc(x.bId)}">다른 공간</button></div>`).join('')
+      :'<p class="note">중복 후보가 없어요.</p>';
+  }catch(err){box.innerHTML=`<p class="note">${esc(err.message)}</p>`}
 }
 async function loadSrcList(){
   const box=$('#srclist');if(!box)return;
@@ -965,6 +1046,8 @@ document.addEventListener('click',ev=>{
   if(d.act==='visit-save'){saveVisitDate();return}
   if(d.act==='visit-remove'){removeVisit();return}
   if(d.act==='visit-close'){closeVisitDialog();return}
+  if(d.vrule){t.disabled=true;t.textContent='처리 중…';
+    adminApi('/api/admin/venues/rule',{a:d.a,b:d.b,action:d.vrule}).then(()=>{toast(d.vrule==='merge'?'한 공간으로 합쳤어요':'다른 공간으로 정했어요');allVenues=null;loadAll(true).then(()=>{renderVList();loadDupes()})}).catch(err=>{toast(err.message);t.disabled=false});return}
   if(d.region){S.rexp=S.rexp||{};S.rexp[d.region]=t.getAttribute('aria-expanded')!=='true';save();const page=$('#view-settings'),top=page.scrollTop;renderVList();page.scrollTop=top;return}
   if(d.heart){toggleHeart(d.heart);updateTop();return}
   if(d.act==='retry'){near.error=null;loadMore();return}
@@ -1007,6 +1090,15 @@ document.addEventListener('input',ev=>{if(pv&&ev.target.id&&ev.target.id.startsW
 
 save();
 show((location.hash||'').slice(1)||'near');
+// 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
+const APP_VER='2026-10-02.33';
+api('/api/status').then(st=>{
+  statusCache=st;
+  if(st.version&&st.version!==APP_VER){
+    let k='gj-reload-'+st.version,done=false;try{done=!!sessionStorage.getItem(k);sessionStorage.setItem(k,'1')}catch(e){done=true}
+    if(!done)location.replace(location.pathname+'?v='+encodeURIComponent(st.version)+location.hash);
+  }
+}).catch(()=>{});
 setTimeout(refreshHeartBadge,1500);
 setTimeout(()=>loadAll().then(updateSetBadge).catch(()=>{}),1800);
 })();
