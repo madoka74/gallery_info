@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.34';
+const VERSION = '2026-10-02.35';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -648,7 +648,8 @@ function dupeCandidates(venues) {
   const out = [];
   for (let i = 0; i < venues.length; i++) for (let j = i + 1; j < venues.length; j++) {
     const a = venues[i], b = venues[j], d = haversine(a.lat, a.lng, b.lat, b.lng), s2 = sim(a.name, b.name);
-    if ((d < 60) || (s2 >= 0.5 && d < 2000)) out.push({ a: a.name, b: b.name, meters: Math.round(d), similarity: +s2.toFixed(2), aId: a.id, bId: b.id });
+    if ((d < 60) || (s2 >= 0.5 && d < 2000)) out.push({ a: a.name, b: b.name, meters: Math.round(d), similarity: +s2.toFixed(2), aId: a.id, bId: b.id,
+      aAddr: a.addr || '', bAddr: b.addr || '', aEx: a.ex.slice(0, 3).map(e => e.title), bEx: b.ex.slice(0, 3).map(e => e.title), aCount: a.ex.length, bCount: b.ex.length });
   }
   return out.sort((x, y) => y.similarity - x.similarity || x.meters - y.meters).slice(0, 80);
 }
