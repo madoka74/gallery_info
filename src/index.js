@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.33';
+const VERSION = '2026-10-02.34';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -311,11 +311,17 @@ async function getDataset(env, ctx) {
 async function refreshApis(env) {
   const stats = {};
   const results = await Promise.allSettled([fetchCulture(env, stats), fetchSeoul(env, stats)]);
+  // 한쪽 API가 실패하거나 갑자기 절반 넘게 줄면, 그쪽은 지난번에 받아 둔 전시를 그대로 씀
+  // (일시적 장애 때문에 공간 수십 곳이 한꺼번에 사라지는 일이 없게)
+  const prev = (await env.CACHE.get(API_KEY, 'json')) || { items: [] };
   const items = [];
   results.forEach((r, i) => {
     const name = i ? 'seoul' : 'culture';
-    if (r.status === 'fulfilled') items.push(...r.value);
-    else stats[name + 'Error'] = String(r.reason && r.reason.message || r.reason);
+    const old = prev.items.filter(it => it.src === name);
+    if (r.status === 'fulfilled' && !(old.length >= 20 && r.value.length < old.length * 0.5)) { items.push(...r.value); return; }
+    if (r.status === 'fulfilled') stats[name + 'Suspicious'] = `${r.value.length}개 (지난번 ${old.length}개) → 지난번 데이터 유지`;
+    else stats[name + 'Error'] = String(r.reason && r.reason.message || r.reason) + ` → 지난번 데이터 ${old.length}개 유지`;
+    items.push(...old);
   });
   if (!items.length) throw new Error('두 API 모두 전시를 가져오지 못했습니다: ' + JSON.stringify(stats));
   await env.CACHE.put(API_KEY, JSON.stringify({ at: new Date().toISOString(), items, stats }));
@@ -621,9 +627,7 @@ function sameVenue(a, b) {
   // 거의 같은 자리 + 흔한 단어(미술관·갤러리 등)를 뺀 이름이 같음 ('서울시립 남서울미술관' = '서울시립미술관 남서울미술관')
   // 한가람미술관/한가람디자인미술관처럼 같은 단지의 다른 관은 이름이 달라서 합쳐지지 않음
   const core = k => simKey(k).replace(GENERIC, '');
-  if (d < 60 && core(a.key) === core(b.key) && core(a.key).length >= 2) return true;
-  // 가까운 자리(150m) + 이름이 많이 닮음 ('서울공예박물관' ~ '서울시립 공예박물관' 등 표기 흔들림)
-  return d < 150 && nameSim(a.key, b.key) >= 0.6;
+  return d < 60 && core(a.key) === core(b.key) && core(a.key).length >= 2;
 }
 // 예전(2026-10-02.27까지) 공간 이름 정리 방식: 예전 id를 찾아 이어 주는 데만 씀
 function legacyPlaceName(p) {
