@@ -325,6 +325,12 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
 .leaflet-tooltip.mtip.strong{font-size:13px}
 .leaflet-tooltip-top.mtip::before{border-top-color:var(--surface)}
 .leaflet-container{font-family:var(--f-body)}
+.kpin{display:flex;flex-direction:column;align-items:center;transform:translateY(8px)}
+.kpin.to{transform:translateY(10px)}
+.kpin span{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18);font:600 12px var(--f-body);padding:3px 8px;margin-bottom:6px;white-space:nowrap}
+.kpin i{display:block;width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);background:var(--accent)}
+.kpin.to i{width:20px;height:20px;background:var(--heart)}
+.kpin.to span{font-size:13px}
 .locnow{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .locnow strong{font-size:16px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .locbtn{height:44px!important;width:96px;flex:none;gap:4px}
@@ -1132,30 +1138,40 @@ function openVisitDialog(key){
 }
 function closeVisitDialog(){$('#visitdlg').hidden=true;dlgKey=null}
 
-/* ---------- 지도: 기준 위치 → 전시장 (Leaflet + CARTO 지도, 처음 열 때만 불러옴) ---------- */
-let leafletP=null,lmap=null,llayer=null;
+/* ---------- 지도: 기준 위치 → 전시장 ----------
+   카카오 JavaScript 키(KAKAO_JS_KEY)가 있으면 카카오 지도, 없거나 실패하면 오픈스트리트맵(키 필요 없음) */
+const loadScript=src=>new Promise((ok,no)=>{const js=document.createElement('script');js.src=src;js.onload=ok;js.onerror=()=>no(new Error('지도를 불러오지 못했어요'));document.head.appendChild(js)});
+let mapKind=null,kmap=null,klayers=[],lmap=null,llayer=null,leafletP=null,kakaoP=null;
+function loadKakao(key){
+  if(window.kakao&&kakao.maps&&kakao.maps.LatLng)return Promise.resolve();
+  if(!kakaoP)kakaoP=loadScript(`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false`)
+    .then(()=>new Promise((ok,no)=>{if(!window.kakao||!kakao.maps)return no(new Error('카카오 지도 키·도메인을 확인해 주세요'));kakao.maps.load(ok)}))
+    .catch(e=>{kakaoP=null;throw e});
+  return kakaoP;
+}
 function loadLeaflet(){
   if(window.L)return Promise.resolve();
-  if(leafletP)return leafletP;
-  leafletP=new Promise((ok,no)=>{
+  if(!leafletP){
     const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';document.head.appendChild(css);
-    const js=document.createElement('script');js.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';js.onload=ok;js.onerror=()=>{leafletP=null;no(new Error('지도를 불러오지 못했어요'))};document.head.appendChild(js);
-  });
+    leafletP=loadScript('https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js').catch(e=>{leafletP=null;throw e});
+  }
   return leafletP;
 }
-async function openMap(exId){
-  const rec=EX.get(exId);if(!rec)return;
-  const v=rec.v,o=origin();
-  $('#mapdlg-title').textContent=v.name;
-  $('#mapdlg-sub').innerHTML=`<span class="mono">${fmtDist(dist(v))}</span><i class="dot"></i>${esc(o.name)}에서${v.addr?`<i class="dot"></i>${esc(v.addr)}`:''}`;
-  $('#map-kakao').href=`https://map.kakao.com/link/from/${encodeURIComponent(o.name)},${o.lat},${o.lng}/to/${encodeURIComponent(v.name)},${v.lat},${v.lng}`;
-  $('#map-apple').href=`https://maps.apple.com/?saddr=${o.lat},${o.lng}&daddr=${v.lat},${v.lng}&q=${encodeURIComponent(v.name)}`;
-  $('#mapdlg').hidden=false;
-  try{await loadLeaflet()}catch(e){$('#mapbox').innerHTML=`<p class="note">${esc(e.message)}</p>`;return}
-  const dark=matchMedia('(prefers-color-scheme: dark)').matches;
+function drawKakao(o,v){
+  const box=$('#mapbox');
+  const a=new kakao.maps.LatLng(o.lat,o.lng),b=new kakao.maps.LatLng(v.lat,v.lng);
+  if(!kmap)kmap=new kakao.maps.Map(box,{center:b,level:5});
+  klayers.forEach(x=>x.setMap(null));klayers=[];
+  const cs=getComputedStyle(document.documentElement),acc=cs.getPropertyValue('--accent').trim()||'#2C43CF';
+  const pin=(pos,name,cls)=>new kakao.maps.CustomOverlay({position:pos,yAnchor:1,content:`<div class="kpin ${cls}"><span>${esc(name)}</span><i></i></div>`});
+  klayers=[new kakao.maps.Polyline({path:[a,b],strokeWeight:3,strokeColor:acc,strokeOpacity:.75,strokeStyle:'shortdash'}),pin(a,o.name,'from'),pin(b,v.name,'to')];
+  klayers.forEach(x=>x.setMap(kmap));
+  setTimeout(()=>{kmap.relayout();const bd=new kakao.maps.LatLngBounds();bd.extend(a);bd.extend(b);kmap.setBounds(bd,60,40,40,40)},30);
+}
+function drawLeaflet(o,v){
   if(!lmap){
-    lmap=L.map('mapbox',{zoomControl:false,attributionControl:true});lmap.attributionControl.setPrefix(false);
-    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark?'dark_all':'light_all'}/{z}/{x}/{y}{r}.png`,{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}).addTo(lmap);
+    lmap=L.map('mapbox',{zoomControl:false});lmap.attributionControl.setPrefix(false);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(lmap);
   }
   if(llayer)llayer.remove();
   const cs=getComputedStyle(document.documentElement),acc=cs.getPropertyValue('--accent').trim()||'#2C43CF',red=cs.getPropertyValue('--heart').trim()||'#D2375A';
@@ -1166,6 +1182,23 @@ async function openMap(exId){
     L.circleMarker(b,{radius:9,color:'#fff',weight:3,fillColor:red,fillOpacity:1}).bindTooltip(v.name,{permanent:true,direction:'top',offset:[0,-10],className:'mtip strong'})
   ]).addTo(lmap);
   setTimeout(()=>{lmap.invalidateSize();lmap.fitBounds([a,b],{padding:[48,48],maxZoom:16})},30);
+}
+async function openMap(exId){
+  const rec=EX.get(exId);if(!rec)return;
+  const v=rec.v,o=origin();
+  $('#mapdlg-title').textContent=v.name;
+  $('#mapdlg-sub').innerHTML=`<span class="mono">${fmtDist(dist(v))}</span><i class="dot"></i>${esc(o.name)}에서${v.addr?`<i class="dot"></i>${esc(v.addr)}`:''}`;
+  $('#map-kakao').href=`https://map.kakao.com/link/from/${encodeURIComponent(o.name)},${o.lat},${o.lng}/to/${encodeURIComponent(v.name)},${v.lat},${v.lng}`;
+  $('#map-apple').href=`https://maps.apple.com/?saddr=${o.lat},${o.lng}&daddr=${v.lat},${v.lng}&q=${encodeURIComponent(v.name)}`;
+  $('#mapdlg').hidden=false;
+  if(!statusCache){try{statusCache=await api('/api/status')}catch(e){}}
+  const key=statusCache&&statusCache.kakaoJsKey;
+  if(mapKind!=='leaflet'&&key){
+    try{await loadKakao(key);mapKind='kakao';drawKakao(o,v);return}
+    catch(e){console.warn(e)}
+  }
+  try{await loadLeaflet();mapKind='leaflet';drawLeaflet(o,v)}
+  catch(e){$('#mapbox').innerHTML=`<p class="note" style="padding:16px">${esc(e.message)}</p>`}
 }
 function closeMap(){$('#mapdlg').hidden=true}
 function saveVisitDate(){
@@ -1504,7 +1537,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.45';
+const APP_VER='2026-10-03.46';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
