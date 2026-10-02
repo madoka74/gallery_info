@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.36';
+const VERSION = '2026-10-02.37';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -180,8 +180,6 @@ async function route(url, req, env, ctx) {
     await env.CACHE.put(key, JSON.stringify({ data, savedAt }), { expirationTtl: 400 * 86400 }); // 400일 동안 안 쓰면 지워짐
     return json({ ok: true, savedAt });
   }
-  // 아이폰 키체인에 복원 코드를 저장하게 하는 용도의 빈 응답 (폼 제출 대상)
-  if (p === '/api/sync/keychain') return new Response('<!doctype html><title>ok</title>', { headers: { 'content-type': 'text/html; charset=utf-8' } });
 
   if (p === '/api/img') {
     const u = String(q('u') || '');
