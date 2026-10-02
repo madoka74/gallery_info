@@ -468,7 +468,7 @@ function cardHTML(e,v,meta={}){
       <dl class="label">
         ${e.artist?`<dt>작가</dt><dd>${esc(e.artist)}</dd>`:''}
         <dt>기간</dt><dd class="mono">${period(e)}</dd>
-        <dt>장소</dt><dd class="place"><span><strong>${esc(v.name)}</strong>${v.addr?`<small>${esc(v.addr)}</small>`:''}</span><button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${hearted}" aria-label="선호 공간으로 하트">${ICON.heart}</button></dd>
+        <dt>장소</dt><dd class="place"><span><strong>${esc(v.name)}</strong>${e.hall||v.addr?`<small>${esc([e.hall,v.addr].filter(Boolean).join(' · '))}</small>`:''}</span><button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${hearted}" aria-label="선호 공간으로 하트">${ICON.heart}</button></dd>
         ${e.fee?`<dt>관람</dt><dd>${esc(e.fee)}</dd>`:''}
         ${e.link?`<dt>정보</dt><dd><a class="ext" href="${esc(e.link)}" target="_blank" rel="noopener">자세히 보기</a></dd>`:''}
       </dl>
