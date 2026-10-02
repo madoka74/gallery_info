@@ -620,17 +620,24 @@ const observePosters=root=>{root.querySelectorAll('img[data-poster]:not([data-do
 /* ---------- NEW: 새로 들어온 전시. 화면에 1초 넘게 보이면 본 것으로 치고, 지나가면 표시를 지움 ---------- */
 const seenSet=new Set(S.seen);
 let seenSaveT;
-function isNewE(e){const k=keyOf(e);return !!(e.firstSeen&&e.firstSeen>S.since&&!seenSet.has(k)&&!seenSet.has(e.id)&&!S.visited[k])}
-function markSeen(key){
+// 이미 별표했거나 본 전시(제목 표기가 바뀌어도 같은 전시로 알아봄)는 NEW가 아님
+function isNewE(e,v){
+  const k=keyOf(e);
+  if(!(e.firstSeen&&e.firstSeen>S.since)||seenSet.has(k)||seenSet.has(e.id)||S.visited[k])return false;
+  if(S.stars.some(s=>s.e.id===e.id||(v&&s.v&&s.v.id===v.id&&sameEx(e,v,s.e,s.v))))return false;
+  if(v&&Object.values(S.visited).some(r=>r&&r.e&&r.v&&r.v.id===v.id&&sameEx(e,v,r.e,r.v)))return false;
+  return true;
+}
+function markSeen(key,id){
   if(!key||seenSet.has(key))return;
-  seenSet.add(key);S.seen=[...seenSet].slice(-4000);
+  seenSet.add(key);if(id)seenSet.add(id);S.seen=[...seenSet].slice(-4000);
   clearTimeout(seenSaveT);seenSaveT=setTimeout(save,400);updateHeartBadge();
 }
 const seenTimers=new Map();
 const seenIO=new IntersectionObserver(ents=>ents.forEach(en=>{
   const c=en.target;
   if(en.isIntersecting&&en.intersectionRatio>=0.6){
-    if(!seenTimers.has(c))seenTimers.set(c,setTimeout(()=>{markSeen(c.dataset.key);c.dataset.seen='1'},1200));
+    if(!seenTimers.has(c))seenTimers.set(c,setTimeout(()=>{markSeen(c.dataset.key,c.dataset.ex);c.dataset.seen='1'},1200));
   }else{
     clearTimeout(seenTimers.get(c));seenTimers.delete(c);
     if(c.dataset.seen){c.querySelector('.newtag')?.remove();seenIO.unobserve(c)}
@@ -641,7 +648,7 @@ function observeNew(root){root.querySelectorAll('.card .newtag').forEach(t=>seen
 // 하트 탭 뱃지 = 하트한 공간의 NEW 전시 수
 let heartData=null;
 function updateHeartBadge(){
-  const n=(heartData||[]).reduce((a,v)=>a+v.ex.filter(isNewE).length,0);
+  const n=(heartData||[]).reduce((a,v)=>a+v.ex.filter(e=>isNewE(e,v)).length,0);
   const b=$('#heartbadge');b.hidden=!n;b.textContent=n;
 }
 async function refreshHeartBadge(){
@@ -698,7 +705,7 @@ const fmtDay=ymd=>String(ymd||'').replace(/-/g,'.');
 const stampHTML=key=>`<div class="stamp" role="button" tabindex="0" data-stamp="${esc(key)}" aria-label="관람 날짜 ${fmtDay(S.visited[key].at)}, 눌러서 바꾸기"><b>관람 완료</b><small>${fmtDay(S.visited[key].at)}</small></div>`;
 function cardHTML(e,v,meta={}){
   const st=status(e),d=dist(v),key=keyOf(e);
-  const starred=!!starOf(e,v),hearted=isHeart(v.id),visited=!!visitKey(e,v),fresh=isNewE(e);
+  const starred=!!starOf(e,v),hearted=isHeart(v.id),visited=!!visitKey(e,v),fresh=isNewE(e,v);
   return `<article class="card${st.kind==='ended'?' is-ended':''}${visited?' is-visited':''}" data-ex="${esc(e.id)}" data-key="${esc(key)}">
     <div class="poster">
       <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}">${fresh?'<span class="newtag">NEW</span>':''}${visited?stampHTML(key):''}</div>
@@ -812,7 +819,7 @@ async function renderHearts(){
     heartInfo={venues:hv.length,count:n};updateTop();
     // 새로 들어온 전시는 거리·정렬과 관계없이 맨 위로. 확인해서 NEW가 사라지면 다음에 열 때 원래 자리로
     const fresh=[],rest=[];
-    withEx.forEach((v,i)=>v.ex.forEach((e,j)=>{remember(e,v);(isNewE(e)?fresh:rest).push({e,v,meta:{rank:i+1,idx:j+1,total:v.ex.length}})}));
+    withEx.forEach((v,i)=>v.ex.forEach((e,j)=>{remember(e,v);(isNewE(e,v)?fresh:rest).push({e,v,meta:{rank:i+1,idx:j+1,total:v.ex.length}})}));
     const cards=list=>list.map(x=>cardHTML(x.e,x.v,x.meta)).join('');
     el.innerHTML=n
       ?(fresh.length?`<div class="divider new"><span>NEW ${fresh.length}</span></div>`+cards(fresh)+`<div class="divider"></div>`:'')
@@ -1435,7 +1442,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.43';
+const APP_VER='2026-10-03.44';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
