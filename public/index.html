@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#E8EBEA">
+<meta name="theme-color" content="#E8EBEA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1113" media="(prefers-color-scheme: dark)">
 <title>가까운 전시</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -230,6 +231,90 @@ details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
 .seg.wrap button{flex:1 1 30%}
 .err{display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 16px;color:var(--fg);max-width:36ch}
 .ext{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+
+/* ===== 마무리 정리: 간격(4·8·12·16)·글자 크기·아이콘을 한 기준으로 ===== */
+/* 상단 오른쪽: 아이콘 + 숫자 */
+.ctx{gap:12px;font-size:13px}
+.stat{display:inline-flex;align-items:center;gap:4px;color:var(--muted);line-height:1}
+.stat svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linejoin:round;stroke-linecap:round;flex:none}
+.stat .mono{color:var(--fg);font-size:13px}
+.stat.h svg{color:var(--heart);fill:currentColor;stroke:currentColor}
+.stat.s svg{color:var(--star);fill:currentColor;stroke:currentColor}
+.stat.v svg{color:var(--stamp)}
+/* 카드 */
+.chip .sep{display:inline-block;width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.55;margin:0 7px;vertical-align:middle}
+.ovl>.chip{padding:0 12px;height:30px;line-height:30px}
+.multi{color:var(--muted);font-size:12px}
+.meta{min-height:24px}
+.label{gap:8px 12px}
+/* 하트 버튼: 배경 없이 크게, 다크에서도 잘 보이게 */
+.icon-btn[data-heart]{background:transparent!important;width:40px;height:40px;color:var(--muted);margin:-8px -8px -8px 0}
+.icon-btn[data-heart] svg{width:23px;height:23px;stroke-width:1.9}
+.icon-btn[data-heart][aria-pressed="true"]{color:var(--heart)}
+.place .icon-btn[data-heart]{margin-top:-10px}
+/* 목록 구분선·끝 표시 */
+.divider{display:flex;align-items:center;gap:12px;height:44px;color:var(--muted);font-size:12px}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.divider:empty::after{display:none}
+.divider span{display:inline-flex;align-items:center;gap:6px;letter-spacing:.04em}
+.divider span svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.divider b{color:var(--fg);font-weight:500}
+.divider.new{color:#FF2D55;font-weight:700}
+.divider.new span{font-family:var(--f-mono);letter-spacing:.08em}
+.end{font-family:var(--f-mono);font-size:12px;color:var(--muted);opacity:.7}
+.loader{height:72px}
+/* 설정 공통 */
+.sec{gap:12px;padding:16px}
+.sec h3{min-height:24px;font-size:13px}
+.sec h3 .cnt{margin-left:auto;display:inline-flex;align-items:center;gap:6px;letter-spacing:0}
+.cnt .mono{color:var(--fg);font-size:13px;font-weight:500}
+.slash{color:var(--line);font-weight:400}
+.note{font-size:12px;line-height:1.5}
+details>summary{list-style:none;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);padding:4px 0;cursor:pointer}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"";width:6px;height:6px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);margin:0 4px 0 2px;transition:transform .15s}
+details[open]>summary::before{transform:rotate(45deg)}
+details[open]>summary{margin-bottom:8px}
+.btn{height:36px;padding:0 14px;border-radius:10px;font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+.btn.sm{height:32px;padding:0 12px;font-size:12.5px}
+.field{height:44px;padding:0 12px}
+.locform,.codebox{gap:8px;align-items:stretch;margin:0}
+.locform .btn,.codebox .btn{height:44px}
+.locnow{min-height:40px}
+.locnow small{margin-top:2px}
+.chips button{height:30px;padding:0 12px}
+/* 공간 목록 */
+.vlist{margin-inline:-4px}
+.rhead{height:52px;padding:0 4px;gap:10px;font-size:15px}
+.rhead .car{width:32px;height:14px;padding:0 9px;box-sizing:content-box;margin:0 -9px}  /* 하트 칸(32px)과 같은 폭·중심 */
+.rhead{gap:10px}
+.rhead .cnt{display:inline-flex;align-items:center;gap:6px;margin-left:2px}
+.rhead .cnt .mono{color:var(--muted);font-weight:400}
+.rhead .ncnt{height:22px;line-height:16px}
+.rgrp>ul{margin:0 0 8px;padding:0}
+.vrow{grid-template-columns:32px minmax(0,1fr) auto auto;gap:10px;min-height:60px;padding:8px 4px}
+.vrow .icon-btn[data-heart]{width:40px;height:40px;margin:0 -4px}
+.vtext strong{font-size:14.5px;line-height:1.35}
+.vtext small{margin-top:2px;line-height:1.4}
+.vtext small .mono{font-size:11.5px}
+i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.6;margin:0 6px;vertical-align:middle}
+.vnew{vertical-align:1px;padding:3px 5px 2px}
+.offhead{padding:12px 4px 4px}
+.mv{margin-left:-2px}
+.vrow>span:empty{display:none}
+/* 백업 */
+.synchead{min-height:28px}
+.synchead .syncstat{font-size:12px}
+.syncrow,.codebox{margin-top:0}
+#restoredet{margin-top:0}
+#restorebox:empty{display:none}
+.alist:empty,#probebox:empty{display:none}
+.restorebox{margin-top:0}
+.morerow{min-height:32px;padding:0}
+.linkbtn{font-size:13px;color:var(--fg);text-decoration-color:var(--line)}
+/* 하단 탭 뱃지: NEW는 빨강, 개수는 파랑 */
+.nav .badge{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.nav .badge.new{background:#FF2D55;color:#fff}
 </style>
 </head>
 <body>
@@ -438,16 +523,17 @@ function reconcile(venues){
   }
   return ch;
 }
-// 서버 목록에 없는 예전 공간(하트·끔 설정만 남은 것): 300m 안에 이름이 닮은 공간이 있으면 그리로 옮김
-function adoptOrphans(list){
-  const have=new Set(list.map(v=>v.id));let ch=false;
-  const core=s=>tkey(s).replace(/서울관|서울점|본관|본점|미술관|갤러리|박물관|아트센터|센터|museum|gallery/g,'');
-  for(const [id,p] of Object.entries(S.prefs)){
-    if(have.has(id)||!p.v||!isFinite(p.v.lat))continue;
-    const a=core(p.v.name);
-    const m=list.find(v=>{const dy=(v.lat-p.v.lat)*111e3,dx=(v.lng-p.v.lng)*88e3;if(dx*dx+dy*dy>300*300)return false;const b=core(v.name);return a.length>=2&&b.length>=2&&(a.includes(b)||b.includes(a))});
-    if(m){ch=reconcile([{...m,prevIds:[id]}])||ch}
-  }
+// 서버 목록에 없는 예전 공간 id(이름 표기가 바뀌기 전의 하트·끔 설정): 서버에 물어 지금 공간으로 옮김
+let resolvedOnce=new Set();
+async function resolveOrphans(list){
+  const have=new Set(list.map(v=>v.id));
+  const items=Object.entries(S.prefs).filter(([id,p])=>!have.has(id)&&!resolvedOnce.has(id)&&p&&p.v).map(([id,p])=>({id,name:p.v.name,lat:p.v.lat,lng:p.v.lng}));
+  if(!items.length)return false;
+  items.forEach(i=>resolvedOnce.add(i.id));
+  let r;try{r=await api('/api/resolve',{items})}catch(e){return false}
+  let ch=false;
+  for(const [old,v] of Object.entries(r.map||{}))ch=reconcile([{...v,prevIds:[old]}])||ch;
+  if(ch)save();
   return ch;
 }
 
@@ -458,8 +544,11 @@ const ICON={
   down:'<svg viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>',
   x:'<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>',
   visit:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.3l2.6 2.6 5-5.4"/></svg>',
-  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>'
+  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
+  frame:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="1.5"/><path d="M8.5 15.5l2.6-3 2 2.2 1.6-1.7 1.8 2.5"/></svg>'
 };
+// 숫자 앞에 작은 아이콘: ♥3 · ★1 · ✓2 · ▣4 (글자 대신)
+const stat=(icon,n,cls='')=>`<span class="stat ${cls}">${ICON[icon]}<span class="mono">${n}</span></span>`;
 
 /* ---------- 포스터: 실제 이미지 우선, 없거나 깨지면 자동 생성 ---------- */
 const PAL=[['#EDE7DC','#1D3FBB','#F05A28','#16161A'],['#101418','#F2C14E','#4FB0A5','#F4F1EC'],['#F4D9D0','#B8232F','#2B2D42','#1C1C22'],['#DDE7E3','#0F6E5C','#E9B44C','#13201C'],['#1E2A5A','#F7B2BD','#F2E8CF','#F5F2EA'],['#F2F0E9','#111111','#D7263D','#111111'],['#E7E0F0','#5B3E96','#F29E4C','#1E1530'],['#C9D6DF','#1E2022','#F5F5F5','#111317'],['#2C2A26','#C89F5D','#8BA6A9','#F1ECE2'],['#F6EFD9','#3E7CB1','#81A4CD','#0E2238']];
@@ -597,12 +686,12 @@ function cardHTML(e,v,meta={}){
     <div class="poster">
       <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}">${fresh?'<span class="newtag">NEW</span>':''}${visited?stampHTML(key):''}</div>
       <div class="ovl">
-        <span class="chip mono">${meta.rank?`<b>${pad(meta.rank)}</b>·`:''} ${fmtDist(d)}</span>
+        <span class="chip mono">${meta.rank?`<b>${pad(meta.rank)}</b><i class="sep"></i>`:''}${fmtDist(d)}</span>
         <div class="ovl-r"><span class="dchip ${st.kind}">${st.dday}</span><button class="icon-btn" data-visit="${esc(e.id)}" aria-pressed="${visited}" aria-label="본 전시로 표시">${ICON.visit}</button><button class="icon-btn" data-star="${esc(e.id)}" aria-pressed="${starred}" aria-label="MY에 담기">${ICON.star}</button></div>
       </div>
     </div>
     <div class="info">
-      <div class="meta"><span class="pill ${st.kind}">${st.label}</span><span>${esc(e.genre||'전시')}</span>${meta.total>1?`<span class="multi">이 공간 전시 ${meta.idx}/${meta.total}</span>`:''}</div>
+      <div class="meta"><span class="pill ${st.kind}">${st.label}</span><span>${esc(e.genre||'전시')}</span>${meta.total>1?`<span class="multi" title="이 공간의 전시">${meta.idx}/${meta.total}</span>`:''}</div>
       <div><h2 class="title">${esc(e.title)}</h2>${e.sub?`<p class="sub">${esc(e.sub)}</p>`:''}</div>
       <dl class="label">
         ${e.artist?`<dt>작가</dt><dd>${esc(e.artist)}</dd>`:''}
@@ -628,7 +717,8 @@ async function loadAll(force){
   const o=origin(),k=o.lat+','+o.lng;
   if(allVenues&&allKey===k&&!force)return allVenues;
   const r=await api(`/api/allvenues?lat=${o.lat}&lng=${o.lng}`);
-  allVenues=r.venues;allKey=k;if(adoptOrphans(allVenues))save();register(allVenues);updateSetBadge();
+  allVenues=r.venues;allKey=k;register(allVenues);updateSetBadge();
+  resolveOrphans(allVenues).then(ch=>{if(ch&&tab==='settings'){const page=$('#view-settings'),top=page.scrollTop;renderVList();page.scrollTop=top}});
   return allVenues;
 }
 
@@ -642,7 +732,7 @@ function feedQuery(){
 async function resetNear(){
   near.dirty=false;
   if(S.loc.mode==='gps'&&!gpsFresh()){
-    near.el.innerHTML='<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span>현재 위치 확인 중</span></div>';
+    near.el.innerHTML='<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span>위치 확인 중</span></div>';
     await refreshGps(false);
   }near.page=0;near.hasMore=true;near.loading=false;near.total=0;near.shown=0;near.error=null;
   near.el.innerHTML='';near.el.scrollTop=0;
@@ -653,19 +743,19 @@ async function resetNear(){
 async function loadMore(){
   if(near.loading||!near.hasMore)return;
   near.loading=true;
-  near.sentinel.innerHTML=`<span><span class="dots"><i></i><i></i><i></i></span>${near.page?'다음 공간 10곳 불러오는 중':'가까운 전시를 찾는 중'}</span>`;
+  near.sentinel.innerHTML=`<span><span class="dots"><i></i><i></i><i></i></span>불러오는 중</span>`;
   try{
     const res=await api('/api/feed',{page:near.page,...feedQuery()});
     near.page++;near.hasMore=res.hasMore;near.total=res.total;
     if(!res.venues.length&&near.page===1){
-      near.el.innerHTML=`<div class="empty"><h3>근처에 열린 전시가 없어요</h3><p>기준 위치를 바꾸거나, 꺼 둔 공간을 다시 켜 보세요.</p><button class="btn" data-goto="settings">설정 열기</button></div>`;
+      near.el.innerHTML=`<div class="empty"><h3>근처에 열린 전시가 없어요</h3><p>기준 위치나 꺼 둔 공간을 확인해 보세요.</p><button class="btn" data-goto="settings">설정 열기</button></div>`;
       updateTop();return;
     }
     register(res.venues);
     near.sentinel.insertAdjacentHTML('beforebegin',venueCards(res.venues,near.shown,true));
     near.shown+=res.venues.length;
     observePosters(near.el);
-    near.sentinel.innerHTML=near.hasMore?'':`<span>${esc(origin().name)} 근처 공간 ${near.total}곳을 모두 봤어요</span>`;
+    near.sentinel.innerHTML=near.hasMore?'':`<span class="end">끝</span>`;
     updateTop();
   }catch(err){
     near.error=err.message;
@@ -694,8 +784,8 @@ async function renderHearts(){
   if(seq!==heartSeq)return;
   const hv=settingsList().filter(v=>isHeart(v.id));
   heartInfo={venues:hv.length,count:0};updateTop();
-  if(!hv.length){el.innerHTML=`<div class="empty"><h3>하트한 공간이 없어요</h3><p>카드의 장소 옆 하트나 설정의 공간 목록에서 좋아하는 전시공간을 표시하면 여기에 모입니다.</p><button class="btn" data-goto="settings">공간 고르기</button></div>`;return}
-  el.innerHTML=`<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span>하트 공간 ${hv.length}곳의 전시를 불러오는 중</span></div>`;
+  if(!hv.length){el.innerHTML=`<div class="empty"><h3>하트한 공간이 없어요</h3><p>카드나 설정에서 공간에 하트를 눌러 보세요.</p><button class="btn" data-goto="settings">공간 고르기</button></div>`;return}
+  el.innerHTML=`<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span>불러오는 중</span></div>`;
   try{
     const res=await api('/api/venues',{ids:hv.map(v=>v.id)});
     if(seq!==heartSeq)return;
@@ -708,9 +798,9 @@ async function renderHearts(){
     withEx.forEach((v,i)=>v.ex.forEach((e,j)=>{remember(e,v);(isNewE(e)?fresh:rest).push({e,v,meta:{rank:i+1,idx:j+1,total:v.ex.length}})}));
     const cards=list=>list.map(x=>cardHTML(x.e,x.v,x.meta)).join('');
     el.innerHTML=n
-      ?(fresh.length?`<div class="loader newhead">새로 들어온 전시 ${fresh.length}개</div>`+cards(fresh)+`<div class="loader">설정의 정렬 순서</div>`:'')
-        +cards(rest)+`<div class="loader">하트 공간 ${hv.length}곳 · 전시 ${n}개 · 설정의 정렬 순서</div>`
-      :`<div class="empty"><h3>지금은 열린 전시가 없어요</h3><p>하트한 공간 ${hv.length}곳에 진행 중이거나 예정된 전시가 없습니다.</p></div>`;
+      ?(fresh.length?`<div class="divider new"><span>NEW ${fresh.length}</span></div>`+cards(fresh)+`<div class="divider"></div>`:'')
+        +cards(rest)+`<div class="loader"><span class="end">끝</span></div>`
+      :`<div class="empty"><h3>열린 전시가 없어요</h3><p>하트한 공간에 지금 전시가 없어요.</p></div>`;
     el.scrollTop=0;observePosters(el);
   }catch(err){
     if(seq!==heartSeq)return;
@@ -727,10 +817,10 @@ function renderMy(fromSync){
   const starred=S.stars.filter(s=>!isVisited(s)).sort((a,b)=>D(a.e.end)-D(b.e.end)||D(a.e.start)-D(b.e.start));
   const log=Object.entries(S.visited).filter(([,r])=>r&&r.e).map(([k,r])=>({...r,k})).sort((a,b)=>b.at.localeCompare(a.at));
   starred.forEach(s=>remember(s.e,s.v));log.forEach(r=>remember(r.e,r.v));
-  if(!starred.length&&!log.length){el.innerHTML=`<div class="empty"><h3>담은 전시가 없어요</h3><p>카드의 별을 누르면 종료일이 가까운 순서로, 체크를 누르면 관람 기록으로 여기에 모입니다.</p><button class="btn" data-goto="near">근처 전시 보기</button></div>`;return}
+  if(!starred.length&&!log.length){el.innerHTML=`<div class="empty"><h3>담은 전시가 없어요</h3><p>카드의 별과 체크를 눌러 보세요.</p><button class="btn" data-goto="near">근처 전시 보기</button></div>`;return}
   el.innerHTML=starred.map(({e,v})=>cardHTML(e,v)).join('')
-    +(starred.length?`<div class="loader">가 볼 전시 ${starred.length}개 · 종료일 빠른 순</div>`:'')
-    +(log.length?`<div class="loader">관람 기록 ${log.length}개 · 최근에 본 순</div>`+log.map(r=>cardHTML(r.e,r.v)).join(''):'');
+    +(log.length?`<div class="divider"><span>${ICON.visit}관람 기록 <b class="mono">${log.length}</b></span></div>`+log.map(r=>cardHTML(r.e,r.v)).join(''):'')
+    +`<div class="loader"><span class="end">끝</span></div>`;
   el.scrollTop=0;observePosters(el);
   if(!fromSync)syncMy();
 }
@@ -753,15 +843,15 @@ function renderSettings(){
   <section class="sec">
     <h3>기준 위치</h3>
     <div class="locnow">
-      <div><strong>${esc(origin().name)}</strong><small>${S.loc.mode==='gps'?(S.loc.gps?'기기 위치를 쓰는 중':'위치 권한이 없어 임시 기준점을 쓰는 중'):'직접 고른 장소'}</small></div>
+      <div><strong>${esc(origin().name)}</strong><small>${S.loc.mode==='gps'?(S.loc.gps?'내 위치':'위치 권한 없음 · 임시 기준점'):'직접 고른 장소'}</small></div>
       <button class="btn${S.loc.mode==='gps'?' ghost':''}" data-act="gps">내 위치</button>
     </div>
-    <form class="locform" id="locform"><input class="field" id="locq" type="search" placeholder="주소나 지명 (예: 성수동, 덕수궁, 테헤란로 152)" autocomplete="off"><button class="btn ghost" type="submit">찾기</button></form>
+    <form class="locform" id="locform"><input class="field" id="locq" type="search" placeholder="주소·지명" autocomplete="off"><button class="btn ghost" type="submit">찾기</button></form>
     <ul class="alist" id="locres"></ul>
     ${S.loc.recent.length?`<div class="chips">${S.loc.recent.map((r,i)=>`<button data-recent="${i}">${esc(r.name)}</button>`).join('')}</div>`:''}
   </section>
   <section class="sec">
-    <h3>전시공간 <span class="mono" id="vcount"></span></h3>
+    <h3>전시공간 <span class="cnt" id="vcount"></span></h3>
     <div class="seg" role="group" aria-label="정렬">
       <button data-sort="distance" aria-pressed="${S.sort==='distance'}">거리순</button>
       <button data-sort="name" aria-pressed="${S.sort==='name'}">이름순</button>
@@ -786,17 +876,17 @@ function renderVList(){
   const box=$('#vlist');if(!box)return;
   const all=settingsList(),q=(($('#vq')||{}).value||'').trim();
   const list=q?all.filter(v=>v.name.includes(q)||(v.addr||'').includes(q)||regionOf(v).includes(q)):all;
-  const c=$('#vcount');if(c)c.textContent=cntText(all);if(tab==='settings')updateTop();
+  const c=$('#vcount');if(c)c.innerHTML=cntText(all);if(tab==='settings')updateTop();
   const custom=S.sort==='custom'&&!q;
   const row=(v,i,arr)=>{const on=isOn(v.id),nw=sessNew.has(v.id);return `
     <li class="vrow${on?'':' off'}${nw?' isnew':''}" data-vid="${esc(v.id)}">
       <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${isHeart(v.id)}" aria-label="${esc(v.name)} 하트">${ICON.heart}</button>
-      <div class="vtext"><strong>${nw?'<span class="vnew">NEW</span>':''}${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span> · ${v.active?`전시 ${v.active}개`:'지금 전시 없음'}${v.addr?` · ${esc(v.addr)}`:''}</small></div>
+      <div class="vtext"><strong>${nw?'<span class="vnew">NEW</span>':''}${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span><i class="dot"></i>${v.active?`전시 <span class="mono">${v.active}</span>`:'전시 없음'}${v.addr?`<i class="dot"></i>${esc(v.addr)}`:''}</small></div>
       <label class="switch"><input type="checkbox" id="on-${esc(v.id)}" data-on="${esc(v.id)}" ${on?'checked':''}><span class="track"></span><span class="sr">${esc(v.name)} 근처 피드에 포함</span></label>
       ${custom&&on?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===arr.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
     </li>`};
   const block=l=>{const onL=l.filter(v=>isOn(v.id)),offL=l.filter(v=>!isOn(v.id));
-    return onL.map((v,i)=>row(v,i,onL)).join('')+(offL.length?`<li class="offhead">꺼 둔 공간 ${offL.length}</li>`+offL.map((v,i)=>row(v,i,offL)).join(''):'')};
+    return onL.map((v,i)=>row(v,i,onL)).join('')+(offL.length?`<li class="offhead">꺼 둠 <span class="mono">${offL.length}</span></li>`+offL.map((v,i)=>row(v,i,offL)).join(''):'')};
   if(!list.length){box.innerHTML=`<li class="note">‘${esc(q)}’에 맞는 공간이 없어요.</li>`;return}
   if(q){box.innerHTML=block(list);observeVenueRows(box);return}
   // 지역별로 묶음. 지역 순서는 기준 위치에서 가까운 공간이 있는 지역부터, 지역 안은 고른 정렬 그대로
@@ -821,7 +911,7 @@ function paintRegionCounts(){
   });
 }
 // '200 / ♡32' (하트가 없으면 숫자만)
-function cntText(l){const h=l.filter(v=>isHeart(v.id)).length;return h?`${l.length} / ♡${h}`:`${l.length}`}
+function cntText(l){const h=l.filter(v=>isHeart(v.id)).length;return `<span class="mono">${l.length}</span>`+(h?`<span class="slash">/</span>${stat('heart',h,'h')}`:'')}
 function observeVenueRows(root){root.querySelectorAll('.vrow.isnew').forEach(li=>vIO.observe(li))}
 function statusText(s){const t=new Date(s.updatedAt);return `갱신 ${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())} · 공간 ${s.venues} · 전시 ${s.exhibitions}`}
 const venueById=id=>(allVenues||[]).find(v=>v.id===id)||(S.prefs[id]&&S.prefs[id].v)||null;
@@ -948,9 +1038,9 @@ function updateTop(){
   const vl=Object.values(S.visited).filter(r=>r&&r.e);
   const liveStars=S.stars.filter(s=>D(s.e.end)>=today&&!S.visited[keyOf(s.e)]&&!vl.some(r=>sameEx(s.e,s.v||{},r.e,r.v||{}))).length;
   const b=$('#mybadge');b.hidden=!liveStars;b.textContent=liveStars;
-  if(tab==='near')c.innerHTML=`<button data-goto="settings">${ICON.pin}${esc(origin().name)}</button>${near.total?`<span class="mono">${near.shown}/${near.total}곳</span>`:''}`;
-  else if(tab==='heart')c.innerHTML=`<span>하트 공간 <span class="mono">${heartInfo.venues}</span>곳 · 전시 <span class="mono">${heartInfo.count}</span></span>`;
-  else if(tab==='my')c.innerHTML=`<span>담은 전시 <span class="mono">${S.stars.length}</span></span>`;
+  if(tab==='near')c.innerHTML=`<button data-goto="settings">${ICON.pin}${esc(origin().name)}</button>`;
+  else if(tab==='heart')c.innerHTML=stat('heart',heartInfo.venues,'h')+stat('frame',heartInfo.count);
+  else if(tab==='my')c.innerHTML=stat('star',S.stars.length,'s')+stat('visit',Object.keys(S.visited).length,'v');
   else c.innerHTML='';
 }
 function show(t){
@@ -1025,8 +1115,8 @@ function toggleHeart(id){
 }
 // 설정 목록의 개수만 다시 씀 (목록은 그대로)
 function paintCounts(){
-  const all=settingsList();const c=$('#vcount');if(c)c.textContent=cntText(all);
-  document.querySelectorAll('#vlist .rgrp').forEach(g=>{const el=g.querySelector('.cnt');if(el)el.textContent=cntText(all.filter(v=>regionOf(v)===g.dataset.rg))});
+  const all=settingsList();const c=$('#vcount');if(c)c.innerHTML=cntText(all);
+  document.querySelectorAll('#vlist .rgrp').forEach(g=>{const el=g.querySelector('.cnt');if(el)el.innerHTML=cntText(all.filter(v=>regionOf(v)===g.dataset.rg))});
 }
 function armed(btn,label,fn){
   if(btn.dataset.armed!==undefined){fn();return}
@@ -1321,7 +1411,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-02.39';
+const APP_VER='2026-10-03.42';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
