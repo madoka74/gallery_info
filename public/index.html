@@ -1091,7 +1091,7 @@ document.addEventListener('input',ev=>{if(pv&&ev.target.id&&ev.target.id.startsW
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-02.33';
+const APP_VER='2026-10-02.34';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
