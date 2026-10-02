@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.43';
+const VERSION = '2026-10-03.44';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -462,6 +462,10 @@ async function stampFirstSeen(env, venues) {
   for (const v of venues) for (const e of v.ex) {
     const keys = [e.title, ...(e.alt || [])].map(t => v.id + '|' + titleKey(t)).filter(k => !k.endsWith('|'));
     let known = keys.map(k => m[k]).filter(Boolean).sort()[0];
+    // 같은 공간에서 그 기간의 전시가 하나뿐이면, 제목을 전혀 다르게 읽었어도 같은 전시로 보고 처음 시각을 이어 씀
+    const dkey = 'D|' + v.id + '|' + e.start + '|' + e.end;
+    const soleDates = v.ex.filter(x => x.start === e.start && x.end === e.end).length === 1;
+    if (!known && soleDates && m[dkey]) known = m[dkey];
     // 제목을 조금 다르게 읽은 경우('우우스모'↔'우우스모스'): 같은 공간의 비슷한 제목 기록을 이어 씀
     if (!known && !firstRun) {
       const pre = v.id + '|', mine = keys.map(k => k.slice(pre.length));
@@ -471,6 +475,7 @@ async function stampFirstSeen(env, venues) {
     const fs = known || (firstRun ? '2000-01-01T00:00:00.000Z' : now);
     if (!known && !firstRun) fresh++;
     keys.forEach(k => { if (!m[k] || m[k] > fs) m[k] = fs; live.add(k); });
+    if (soleDates) { if (!m[dkey] || m[dkey] > fs) m[dkey] = fs; live.add(dkey); }
     e.firstSeen = fs; e.nk = keys[0];
   }
   // 공간도 '처음 들어온 시각' (설정 목록의 NEW). 처음 켤 때 이미 있던 공간은 옛날 시각
@@ -748,7 +753,13 @@ function sameExhibition(x, y) {
 function dedupeTitles(list) {
   const out = [];
   for (const it of list) {
-    const i = out.findIndex(o => sameExhibition(o, it));
+    let i = out.findIndex(o => sameExhibition(o, it));
+    // 제목 표기가 완전히 달라도(한글↔영문 등) 출처가 다르고, 이 공간에서 그 기간의 전시가 양쪽 모두 하나뿐이면 같은 전시
+    if (i < 0) {
+      const cand = out.map((o, k) => [o, k]).filter(([o]) => o.src !== it.src && o.start === it.start && o.end === it.end);
+      const mine = list.filter(x => x.src === it.src && x.start === it.start && x.end === it.end).length;
+      if (cand.length === 1 && mine === 1 && list.filter(x => x.src === cand[0][0].src && x.start === it.start && x.end === it.end).length === 1) i = cand[0][1];
+    }
     if (i < 0) { out.push(it); continue; }
     const prev = out[i];
     const keep = rank(prev) >= rank(it) ? prev : it, other = keep === prev ? it : prev;

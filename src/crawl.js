@@ -231,8 +231,12 @@ export function stabilize(items, prevItems, pageText = '') {
   const used = new Set(), page = tkey(pageText);
   const onPage = t => { const k = tkey(t); return k.length >= 2 && page.includes(k); };
   return items.map(n => {
-    const o = prevItems.find(o => !used.has(o.id) && o.start === n.start && o.end === n.end && similarTitle(o.title, n.title))
-      || prevItems.find(o => !used.has(o.id) && tkey(o.title) === tkey(n.title));
+    const sameD = x => x.start === n.start && x.end === n.end;
+    const soleDates = prevItems.filter(o => !used.has(o.id) && sameD(o)).length === 1 && items.filter(sameD).length === 1;
+    const o = prevItems.find(o => !used.has(o.id) && sameD(o) && similarTitle(o.title, n.title))
+      || prevItems.find(o => !used.has(o.id) && tkey(o.title) === tkey(n.title))
+      // 제목을 전혀 다르게 읽었어도(한글↔영문) 그 기간의 전시가 지난번·이번 모두 하나뿐이면 같은 전시
+      || (soleDates ? prevItems.find(o => !used.has(o.id) && sameD(o)) : null);
     if (!o) return n;
     used.add(o.id);
     const title = onPage(n.title) && !onPage(o.title) ? n.title : o.title;
