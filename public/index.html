@@ -187,7 +187,8 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .synchead{display:flex;align-items:center;gap:10px}
 .synchead h3{margin:0}
 .synchead .syncstat{flex:1;justify-content:flex-end;font-family:var(--f-mono);font-size:12px}
-.pkdone{font-size:13px;color:var(--muted);align-self:center}
+.morerow{display:flex;align-items:center;gap:14px;padding-block:6px;flex-wrap:wrap}
+.morelab{font-size:12px;color:var(--muted);width:52px}
 .syncline{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-block:6px}
 .syncstat .dot.off{background:var(--muted)}
 .linkbtn{background:none;border:0;padding:4px 0;font-size:13px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
@@ -1195,25 +1196,35 @@ function paintSyncStat(){
   el.innerHTML=!SY.on?`<span class="dot off"></span>꺼짐`
     :syncErr?`<span class="dot err"></span>실패 · 다시 시도 중`
     :syncBusy?`<span class="dot"></span>저장 중…`
-    :`<span class="dot"></span>${SY.at?fmtWhen(SY.at):'켜짐'}`;
+    :`<span class="dot"></span>${SY.at?fmtWhen(SY.at):'켜짐'}${SY.passkey?' · Face ID ✓':''}`;
 }
 function fmtWhen(iso){const t=new Date(iso);return `${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`}
-const hasPasskey=()=>!!(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
+// 백업 화면
+//  평소: '백업 · 저장 시각 · Face ID ✓' 한 줄 + 스위치. 할 일은 처음 한 번 'Face ID로 보관'뿐
+//  기록이 빈 기기(새 기기·지워진 경우): '이전 기록 불러오기'가 맨 위에 크게
+//  더보기: 보관(코드 복사·파일) / 가져오기(Face ID·코드·파일)로 나눠 둠
 function renderSync(){
   const el=$('#syncsec');if(!el)return;
-  const pk=hasPasskey();
+  const pk=hasPasskey(),c=countsOf(S),empty=!c.stars&&!c.visited&&!c.hearts;
   el.innerHTML=`<div class="synchead"><h3>백업</h3><span class="syncstat" id="syncstat"></span>
       <label class="switch"><input type="checkbox" id="syncon" ${SY.on?'checked':''}><span class="track"></span><span class="sr">자동 백업</span></label></div>
-    ${pk?`<div class="syncrow">
-      ${SY.passkey?'<span class="pkdone">✓ Face ID 보관됨</span>':'<button class="btn sm" data-act="pk-save">Face ID로 보관</button>'}
-      <button class="btn ghost sm" data-act="pk-restore">Face ID로 복원</button></div>`:''}
+    ${empty?`<div class="syncrow"><button class="btn sm" data-act="${pk?'pk-restore':'open-more'}">이전 기록 불러오기</button></div>`:''}
+    ${pk&&!SY.passkey&&!empty?`<div class="syncrow"><button class="btn sm" data-act="pk-save">Face ID로 보관</button></div>`:''}
     <div id="restorebox"></div>
-    <details id="restoredet" ${(!pk&&(pendingRestore||restoreMsg))?'open':''}><summary>더보기</summary>
-      <form class="codebox" id="restoreform"><input class="field" id="restorecode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="복원 코드"><button class="btn sm" type="submit" id="restorebtn">불러오기</button></form>
-      <div class="syncrow"><button class="linkbtn" data-act="code-copy">내 코드 복사</button><button class="linkbtn" data-act="file-export">파일로 내보내기</button><label class="linkbtn">파일에서 가져오기<input type="file" id="importfile" accept="application/json,.json" hidden></label></div>
+    <details id="restoredet"><summary>더보기</summary>
+      <div class="morerow"><span class="morelab">보관</span>
+        ${pk?`<button class="linkbtn" data-act="pk-save">${SY.passkey?'Face ID 다시 보관':'Face ID'}</button>`:''}
+        <button class="linkbtn" data-act="code-copy">코드 복사</button>
+        <button class="linkbtn" data-act="file-export">파일</button></div>
+      <div class="morerow"><span class="morelab">가져오기</span>
+        ${pk?'<button class="linkbtn" data-act="pk-restore">Face ID</button>':''}
+        <button class="linkbtn" data-act="show-codeform">코드</button>
+        <label class="linkbtn">파일<input type="file" id="importfile" accept="application/json,.json" hidden></label></div>
+      <form class="codebox" id="restoreform" hidden><input class="field" id="restorecode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="복원 코드"><button class="btn sm" type="submit" id="restorebtn">불러오기</button></form>
     </details>`;
   paintSyncStat();paintRestore();
 }
+const hasPasskey=()=>!!(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
 /* 패스키(Face ID): 복원 코드를 패스키의 사용자 id에 담아 iCloud 키체인에 보관.
    복원할 때 패스키를 고르면 그 id(=코드)가 돌아옴 → 서버에서 백업을 불러옴. 서버 검증은 필요 없음 */
 const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
@@ -1301,6 +1312,8 @@ document.addEventListener('click',ev=>{
   else if(a==='restore-merge')applyRestore('merge');
   else if(a==='restore-replace')armed(t,'한 번 더',()=>applyRestore('replace'));
   else if(a==='pk-save')passkeySave();
+  else if(a==='open-more'){const d=$('#restoredet');if(d)d.open=true;const f=$('#restoreform');if(f){f.hidden=false;$('#restorecode').focus()}}
+  else if(a==='show-codeform'){const f=$('#restoreform');if(f){f.hidden=!f.hidden;if(!f.hidden)$('#restorecode').focus()}}
   else if(a==='pk-restore')passkeyRestore();
   else if(a==='restore-cancel'){pendingRestore=null;restoreMsg=null;paintRestore()}
 });
@@ -1308,7 +1321,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-02.38';
+const APP_VER='2026-10-02.39';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
