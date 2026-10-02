@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.35';
+const VERSION = '2026-10-02.36';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -163,6 +163,26 @@ async function route(url, req, env, ctx) {
   }
 
   // http 전용 사이트(학고재 등)의 포스터: https 페이지에서는 브라우저가 막으므로 여기서 대신 받아 줌 (이미지만)
+  /* ---- 백업·복원: 계정 없이 '복원 코드'로 내 저장 데이터(하트·별표·관람 기록 등)를 서버에 보관 ----
+     코드는 그대로 저장하지 않고 해시로만 키를 만듦. 다른 기기가 먼저 저장했으면 409와 서버 데이터를 돌려줘서 앱이 합친 뒤 다시 저장 */
+  if (p === '/api/sync/save' || p === '/api/sync/load') {
+    const code = String(body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length < 20 || code.length > 40) return json({ error: '복원 코드 형식이 맞지 않아요' }, 400);
+    const key = 'sync:' + (await sha256hex(code));
+    const cur = await env.CACHE.get(key, 'json');
+    if (p === '/api/sync/load') return cur ? json({ data: cur.data, savedAt: cur.savedAt }) : json({ error: '이 코드로 저장된 데이터가 없어요' }, 404);
+    const data = body.data;
+    if (!data || typeof data !== 'object') return json({ error: '저장할 데이터가 없어요' }, 400);
+    const raw = JSON.stringify(data);
+    if (raw.length > 400000) return json({ error: '데이터가 너무 커요' }, 413);
+    if (cur && body.base !== cur.savedAt) return json({ conflict: true, data: cur.data, savedAt: cur.savedAt }, 409);
+    const savedAt = new Date().toISOString();
+    await env.CACHE.put(key, JSON.stringify({ data, savedAt }), { expirationTtl: 400 * 86400 }); // 400일 동안 안 쓰면 지워짐
+    return json({ ok: true, savedAt });
+  }
+  // 아이폰 키체인에 복원 코드를 저장하게 하는 용도의 빈 응답 (폼 제출 대상)
+  if (p === '/api/sync/keychain') return new Response('<!doctype html><title>ok</title>', { headers: { 'content-type': 'text/html; charset=utf-8' } });
+
   if (p === '/api/img') {
     const u = String(q('u') || '');
     if (!/^http:\/\/[^/]+\//i.test(u)) return new Response('bad url', { status: 400 });
@@ -806,3 +826,8 @@ function tag(xml, names) {
 
 // 테스트용 내보내기
 export const _test = { rebuild, parseCulture, parseSeoul, buildVenues, placeName, fixLatLng, blockList, ymd };
+
+async function sha256hex(s) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('gakkaun-sync:' + s));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
