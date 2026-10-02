@@ -218,9 +218,36 @@ async function crawlOne(env, src, prev, force) {
     const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
     items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
   }
+  // 같은 전시를 매번 조금씩 다르게 읽어도(제목 한두 글자) 앞서 쓰던 제목·id를 그대로 유지 → 전시가 바뀌거나 NEW로 다시 뜨지 않게
+  items = stabilize(items, prev.items || [], page.text);
   // 렌더링 한도 때문에 못 찾은 거면 지난 결과를 지우지 않고 1시간 뒤 다시
   if (!items.length && /rate limit|2001|429/i.test(renderError)) throw new Error('브라우저 렌더링 실패(한도 초과): ' + renderError);
   return { url, srcUrl: src.url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError };
+}
+
+// 지난번 결과와 기간이 같고 제목이 거의 같으면 지난번 제목·id를 씀 (새로 읽은 쪽은 빈 칸만 채움)
+// 제목은 페이지에 그대로 적혀 있는 쪽을 믿음 (둘 다 있거나 둘 다 없으면 지난번 것 유지). id는 항상 지난번 것
+export function stabilize(items, prevItems, pageText = '') {
+  const used = new Set(), page = tkey(pageText);
+  const onPage = t => { const k = tkey(t); return k.length >= 2 && page.includes(k); };
+  return items.map(n => {
+    const o = prevItems.find(o => !used.has(o.id) && o.start === n.start && o.end === n.end && similarTitle(o.title, n.title))
+      || prevItems.find(o => !used.has(o.id) && tkey(o.title) === tkey(n.title));
+    if (!o) return n;
+    used.add(o.id);
+    const title = onPage(n.title) && !onPage(o.title) ? n.title : o.title;
+    return { ...n, id: o.id, title, sub: o.sub || n.sub, artist: o.artist || n.artist,
+      poster: o.poster || n.poster, link: o.link || n.link, fee: n.fee || o.fee, hall: n.hall || o.hall };
+  });
+}
+export function similarTitle(a, b) {
+  const x = tkey(a), y = tkey(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (Math.min(x.length, y.length) >= 3 && (x.includes(y) || y.includes(x))) return true;
+  const bi = s => { const o = new Set(); for (let i = 0; i < s.length - 1; i++) o.add(s.slice(i, i + 2)); return o; };
+  const A = bi(x), B = bi(y); let k = 0; A.forEach(t => B.has(t) && k++);
+  return A.size + B.size > 0 && (2 * k) / (A.size + B.size) >= 0.6;
 }
 
 /* ---------- 페이지 받기 ---------- */
@@ -240,8 +267,15 @@ async function getPage(env, src, url) {
     try { res = await fetch(u, { headers: { 'user-agent': UA, accept: 'text/html,*/*', 'accept-language': 'ko,en;q=0.8' }, redirect: 'follow' }); }
     catch (e) { last = '연결 실패: ' + e.message; continue; }
     if (res.ok) {
-      const html = await readHtml(res);
-      return { ok: true, via: 'html', text: htmlToText(html, res.url || u), renderError };
+      let html = await readHtml(res), base = res.url || u;
+      // 프레임으로 감싼 옛날식 사이트: 본문 프레임을 따라 들어감
+      if (htmlToText(html, base).length < 300) {
+        const fr = [...html.matchAll(/<i?frame\b[^>]*\ssrc=["']([^"']+)["']/gi)].map(m => abs(m[1], base)).filter(x => x && x.startsWith('http'));
+        for (const f of fr.slice(0, 2)) {
+          try { const r2 = await fetch(f, { headers: { 'user-agent': UA, accept: 'text/html,*/*' } }); if (r2.ok) { const h2 = await readHtml(r2); if (htmlToText(h2, r2.url || f).length > 300) { html = h2; base = r2.url || f; break; } } } catch {}
+        }
+      }
+      return { ok: true, via: 'html', text: htmlToText(html, base), renderError };
     }
     last = `HTTP ${res.status}`;
     if (res.status < 500) break; // 4xx는 주소를 바꿔도 같음
@@ -429,7 +463,8 @@ async function extract(env, src, text, url) {
 
 규칙:
 - 이 공간에서 지금 진행 중이거나 앞으로 열릴 전시만 뽑아라. 이미 끝난 전시, 지난 전시 아카이브, 뉴스, 이벤트, 교육 프로그램, 공연은 제외.
-${src.branch ? `- 이 페이지에는 여러 지점·도시의 전시가 섞여 있을 수 있다. "${src.branch}"에 해당하는 전시만 포함하고 나머지는 제외.\n` : ''}- 날짜는 YYYY-MM-DD로. 연도가 없으면 오늘 기준으로 가장 자연스러운 연도를 쓴다.
+${src.branch ? `- 이 페이지에는 여러 지점·도시의 전시가 섞여 있을 수 있다. "${src.branch}"에 해당하는 전시만 포함하고, 다른 지점이라고 분명히 적힌 전시는 제외. 지점 표기가 없으면 제외하지 말고 포함(기간이 없으면 link를 채움).\n` : ''}- 제목 앞뒤의 판촉 문구([개막특가 30% 할인], [기간 연장], [최대 44% 할인], NEW, 예매 등)는 빼고 전시 제목만.
+- 날짜는 YYYY-MM-DD로. 연도가 없으면 오늘 기준으로 가장 자연스러운 연도를 쓴다.
 - 현재 전시 목록인데 기간이 페이지에 안 적혀 있으면 start·end를 빈 문자열로 두고, 그 전시의 상세 페이지 link는 반드시 채운다.
 - poster와 link는 텍스트 안의 [IMG 주소], [LINK 주소]에 실제로 있는 주소만 그대로 쓰고, 지어내지 마라. 확실하지 않으면 빈 문자열.
 - 제목·작가 이름은 페이지에 적힌 그대로. 한국어와 영어가 같이 있으면 한국어를 우선.

@@ -12,7 +12,7 @@
 //   CF_ACCOUNT_ID, CF_API_TOKEN  (선택) 자바스크립트로 그려지는 페이지를 읽는 브라우저 렌더링용
 //   KAKAO_REST_KEY  (선택) 기준 위치 검색용 카카오 로컬 API 키. 없으면 OpenStreetMap으로 검색
 
-import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect, COORDS_KEY } from './crawl.js';
+import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect, COORDS_KEY, similarTitle } from './crawl.js';
 
 // 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
 // from~to는 '기간이 겹치는' 항목을 돌려줌. 정상 resultCode는 00.
@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.31';
+const VERSION = '2026-10-02.32';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -334,7 +334,12 @@ async function stampFirstSeen(env, venues) {
   let fresh = 0;
   for (const v of venues) for (const e of v.ex) {
     const keys = [e.title, ...(e.alt || [])].map(t => v.id + '|' + titleKey(t)).filter(k => !k.endsWith('|'));
-    const known = keys.map(k => m[k]).filter(Boolean).sort()[0];
+    let known = keys.map(k => m[k]).filter(Boolean).sort()[0];
+    // 제목을 조금 다르게 읽은 경우('우우스모'↔'우우스모스'): 같은 공간의 비슷한 제목 기록을 이어 씀
+    if (!known && !firstRun) {
+      const pre = v.id + '|', mine = keys.map(k => k.slice(pre.length));
+      known = Object.keys(m).filter(k => k.startsWith(pre) && mine.some(t => similarTitle(t, k.slice(pre.length)))).map(k => m[k]).sort()[0];
+    }
     // 처음 기능을 켤 때 이미 있던 전시는 NEW로 치지 않도록 아주 옛날 시각을 줌
     const fs = known || (firstRun ? '2000-01-01T00:00:00.000Z' : now);
     if (!known && !firstRun) fresh++;
