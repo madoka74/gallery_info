@@ -23,8 +23,12 @@ export async function loadSources(env) {
   }
   st.seeded = true;
   if (changed) await env.CACHE.put(SOURCES_KEY, JSON.stringify(st));
-  return st.list;
+  // 좌표 없이 주소만 적은 공간(지방 등)은 주소로 계산해 둔 좌표를 씀 (index.js fillSourceCoords)
+  const coords = (await env.CACHE.get(COORDS_KEY, 'json')) || {};
+  return st.list.map(s => Number.isFinite(s.lat) && Number.isFinite(s.lng) ? s
+    : coords[s.id] && coords[s.id].addr === s.addr ? { ...s, lat: coords[s.id].lat, lng: coords[s.id].lng } : s);
 }
+export const COORDS_KEY = 'srccoords:v1';
 export async function saveSource(env, src) {
   const st = (await env.CACHE.get(SOURCES_KEY, 'json')) || { list: [], deleted: [] };
   await loadSources(env); // 초기값 채우기
@@ -130,6 +134,10 @@ function hallScore(hall, src) {
   for (const n of [src.name, ...(src.aliases || [])]) {
     const k = tkey(n).replace(/예술의전당/g, '');
     if (k.length >= 2 && h.includes(k)) best = Math.max(best, k.length);
+    // 지점 이름만 적힌 표기('부산', '청주관')도 알아봄: 이름의 마지막 낱말
+    const words = String(n || '').trim().split(/\s+/);
+    const last = words.length > 1 ? tkey(words[words.length - 1]) : '';
+    if (last.length >= 2 && h.includes(last)) best = Math.max(best, last.length);
   }
   return best;
 }

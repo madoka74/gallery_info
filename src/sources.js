@@ -63,5 +63,48 @@ export const SOURCES = [
   { id: 'gladstone', name: '글래드스톤 서울', addr: '강남구 청담동', lat: 37.5249, lng: 127.0495, home: 'https://www.gladstonegallery.com', url: 'https://www.gladstonegallery.com/exhibitions', branch: 'Seoul' },
   { id: 'tang', name: '탕 컨템포러리 아트 서울', addr: '강남구 청담동', lat: 37.5248, lng: 127.0440, home: 'https://www.tangcontemporary.com', url: 'https://www.tangcontemporary.com', branch: 'Seoul' },
   { id: 'yehwa', name: '예화랑', addr: '강남구 신사동', lat: 37.5245, lng: 127.0400, home: 'https://www.galleryyeh.com', url: 'https://www.galleryyeh.com' },
-  { id: 'thepage', name: '더페이지갤러리', addr: '성동구 성수동', lat: 37.5446, lng: 127.0560, home: 'https://thepagegallery.com', url: 'https://thepagegallery.com' }
+  { id: 'thepage', name: '더페이지갤러리', addr: '성동구 성수동', lat: 37.5446, lng: 127.0560, home: 'https://thepagegallery.com', url: 'https://thepagegallery.com' },
+
+  /* ---------- 서울·수도권 밖 (좌표는 주소로 자동 계산) ---------- */
+  // 국립현대미술관 다른 관: 서울관과 같은 목록 페이지
+  { id: 'mmca-gwacheon', name: '국립현대미술관 과천', addr: '경기 과천시 광명로 313', home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '과천관만', render: true, aliases: ['국립현대미술관 과천관','MMCA 과천'] },
+  { id: 'mmca-cheongju', name: '국립현대미술관 청주', addr: '충북 청주시 청원구 상당로 314', home: 'https://www.mmca.go.kr', url: 'https://www.mmca.go.kr/exhibitions/progressList.do', branch: '청주관(국립현대미술관 청주)만', render: true, aliases: ['국립현대미술관 청주관','MMCA 청주','국립청주미술관'] },
+  // 부산
+  { id: 'busan-art', name: '부산시립미술관', addr: '부산 해운대구 APEC로 58', home: 'https://art.busan.go.kr', url: 'https://art.busan.go.kr/tblTsite07Display/listNowClient.nm', aliases: ['부산시립미술관 본관','Busan Museum of Art','이우환공간'] },
+  { id: 'busan-moca', name: '부산현대미술관', addr: '부산 사하구 낙동남로 1191', home: 'https://www.busan.go.kr/moca', url: 'https://www.busan.go.kr/moca/exhibition01', aliases: ['MoCA Busan','부산 현대미술관'] },
+  { id: 'goeun', name: '고은사진미술관', addr: '부산 해운대구 해운대로452번길 16', home: 'https://www.goeunmuseum.kr', url: 'https://www.goeunmuseum.kr/bbs/page.php?hid=menu02_1', aliases: ['GoEun Museum of Photography'] },
+  { id: 'f1963', name: 'F1963', addr: '부산 수영구 구락로123번길 20', home: 'https://f1963.org', url: 'https://f1963.org', aliases: ['에프1963','F1963 석천홀'] },
+  { id: 'kukje-busan', name: '국제갤러리 부산', addr: '부산 수영구 구락로123번길 20', home: 'https://www.kukjegallery.com', url: 'https://www.kukjegallery.com/exhibitions', branch: '부산만', aliases: ['Kukje Gallery Busan'] },
+  { id: 'johyun-busan', name: '조현화랑 부산', addr: '부산 해운대구 달맞이길 117번길 9', home: 'https://johyungallery.com', url: 'https://johyungallery.com', branch: '부산 (서울 제외)', aliases: ['Johyun Gallery Busan'] },
+  { id: 'museum1', name: '뮤지엄원', addr: '부산 해운대구 센텀서로 20', home: 'http://museum1.co.kr', url: 'http://museum1.co.kr', render: true, aliases: ['Museum 1','뮤지엄 원'] },
+  // 대구·경북
+  { id: 'daegu-art', name: '대구미술관', addr: '대구 수성구 미술관로 40', home: 'https://www.daeguartmuseum.or.kr', url: 'https://www.daeguartmuseum.or.kr/index.do?menu_id=00000729', aliases: ['Daegu Art Museum'] },
+  { id: 'kansong-daegu', name: '대구간송미술관', addr: '대구 수성구 미술관로 70', home: 'https://kansong.org/daegu/', url: 'https://kansong.org/daegu/', aliases: ['간송미술관 대구'] },
+  { id: 'leeahn-daegu', name: '리안갤러리 대구', addr: '대구 중구 달구벌대로 2077', home: 'http://www.leeahngallery.com', url: 'http://www.leeahngallery.com', branch: '대구 (서울 제외)', aliases: ['Leeahn Gallery Daegu'] },
+  { id: 'wooyang', name: '우양미술관', addr: '경북 경주시 보문로 484-7', home: 'https://www.wooyangmuseum.org', url: 'https://www.wooyangmuseum.org/current', aliases: ['Wooyang Museum','아트선재미술관 경주'] },
+  { id: 'solgeo', name: '경주솔거미술관', addr: '경북 경주시 경감로 614', home: 'https://www.gjsam.or.kr/ko/', url: 'https://www.gjsam.or.kr/ko/page.aspx?mnu_uid=78&', aliases: ['솔거미술관'] },
+  { id: 'poma', name: '포항시립미술관', addr: '경북 포항시 북구 환호공원길 10', home: 'http://poma.pohang.go.kr/', url: 'http://poma.pohang.go.kr/', aliases: ['POMA','포항시립미술관 POMA'] },
+  // 울산·경남
+  { id: 'ulsan-art', name: '울산시립미술관', addr: '울산 중구 미술관길 72', home: 'https://www.ulsan.go.kr/s/uam/main.ulsan', url: 'https://www.ulsan.go.kr/s/uam/bbs/list.ulsan?bbsId=BBS_0000000000000174&mId=001003001000000000', aliases: ['Ulsan Art Museum'] },
+  { id: 'gam', name: '경남도립미술관', addr: '경남 창원시 의창구 용지로 296', home: 'https://www.gyeongnam.go.kr/gam/index.gyeong', url: 'https://www.gyeongnam.go.kr/gam/index.gyeong?menuCd=DOM_000003401001000000', aliases: ['Gyeongnam Art Museum'] },
+  { id: 'moonshin', name: '창원시립마산문신미술관', addr: '경남 창원시 마산합포구 문신길 147', home: 'https://www.changwon.go.kr/moonshin/', url: 'https://www.changwon.go.kr/moonshin/', aliases: ['문신미술관','마산문신미술관'] },
+  // 광주·전라 (광주·전남 통합으로 주소·도메인이 바뀌는 중)
+  { id: 'gwangju-art', name: '광주시립미술관', addr: '광주 북구 하서로 52', home: 'https://artmuse.gwangju.go.kr', url: 'https://artmuse.gwangju.go.kr', aliases: ['광주시립미술관 본관','Gwangju Museum of Art'] },
+  { id: 'acc', name: '국립아시아문화전당', addr: '광주 동구 문화전당로 38', home: 'https://www.acc.go.kr', url: 'https://www.acc.go.kr', aliases: ['ACC','아시아문화전당'] },
+  { id: 'jma-jeonnam', name: '전남도립미술관', addr: '전남 광양시 광양읍 순광로 660', home: 'https://jma.jeonnam-gwangju.go.kr/www', url: 'https://jma.jeonnam-gwangju.go.kr/www/9', aliases: ['Jeonnam Museum of Art'] },
+  { id: 'jma-jeonbuk', name: '전북도립미술관', addr: '전북 완주군 구이면 모악산길 111-6', home: 'https://www.jma.go.kr', url: 'https://www.jma.go.kr/web/page.php?pcode=AA01&s_ecate=all', branch: '본관·대아스페이스 (서울관 제외)', aliases: ['Jeonbuk Museum of Art'] },
+  // 대전·충청
+  { id: 'dma', name: '대전시립미술관', addr: '대전 서구 둔산대로 155', home: 'https://www.daejeon.go.kr/dma/index.do', url: 'https://www.daejeon.go.kr/dma/index.do', aliases: ['Daejeon Museum of Art'] },
+  { id: 'leeungno', name: '이응노미술관', addr: '대전 서구 둔산대로 157', home: 'https://www.leeungnomuseum.or.kr', url: 'https://www.leeungnomuseum.or.kr/bbs/bbsList.do?bbsId=exhibit', aliases: ['Lee Ungno Museum'] },
+  { id: 'cmoa', name: '청주시립미술관', addr: '충북 청주시 서원구 충렬로18번길 50', home: 'https://cmoa.cheongju.go.kr', url: 'https://cmoa.cheongju.go.kr', branch: '본관', aliases: ['Cheongju Museum of Art'] },
+  { id: 'arario-cheonan', name: '아라리오갤러리 천안', addr: '충남 천안시 동남구 만남로 43', home: 'https://www.arariogallery.com', url: 'https://www.arariogallery.com', branch: '천안만', aliases: ['Arario Gallery Cheonan'] },
+  // 강원
+  { id: 'solol', name: '강릉시립미술관 솔올', addr: '강원 강릉시 원대로 45', home: 'https://www.gn.go.kr/mu/', url: 'https://www.gn.go.kr/mu/', aliases: ['솔올미술관','강릉 솔올미술관'] },
+  { id: 'parksookeun', name: '박수근미술관', addr: '강원 양구군 양구읍 박수근로 265-15', home: 'http://www.parksookeun.or.kr', url: 'http://www.parksookeun.or.kr', aliases: ['양구 박수근미술관'] },
+  // 제주
+  { id: 'jmoa', name: '제주도립미술관', addr: '제주 제주시 1100로 2894-78', home: 'https://www.jeju.go.kr/jmoa/index.htm', url: 'https://www.jeju.go.kr/jmoa/index.htm', aliases: ['Jeju Museum of Art'] },
+  { id: 'kimtschang', name: '제주도립 김창열미술관', addr: '제주 제주시 한림읍 용금로 883-5', home: 'https://kimtschang-yeul.jeju.go.kr', url: 'https://kimtschang-yeul.jeju.go.kr', aliases: ['김창열미술관'] },
+  { id: 'podo', name: '포도뮤지엄', addr: '제주 서귀포시 안덕면 산록남로 788', home: 'https://www.podomuseum.com', url: 'https://www.podomuseum.com', render: true, aliases: ['PODO Museum'] },
+  { id: 'bonte', name: '본태박물관', addr: '제주 서귀포시 안덕면 산록남로762번길 69', home: 'http://www.bontemuseum.com', url: 'http://www.bontemuseum.com', aliases: ['Bonte Museum'] },
+  { id: 'arario-jeju', name: '아라리오뮤지엄 탑동시네마', addr: '제주 제주시 탑동로 14', home: 'https://www.arariomuseum.org', url: 'https://www.arariomuseum.org', aliases: ['아라리오뮤지엄 제주','아라리오뮤지엄 동문모텔'] }
 ];

@@ -12,7 +12,7 @@
 //   CF_ACCOUNT_ID, CF_API_TOKEN  (선택) 자바스크립트로 그려지는 페이지를 읽는 브라우저 렌더링용
 //   KAKAO_REST_KEY  (선택) 기준 위치 검색용 카카오 로컬 API 키. 없으면 OpenStreetMap으로 검색
 
-import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect } from './crawl.js';
+import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect, COORDS_KEY } from './crawl.js';
 
 // 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
 // from~to는 '기간이 겹치는' 항목을 돌려줌. 정상 resultCode는 00.
@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-02.29';
+const VERSION = '2026-10-02.30';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -184,7 +184,7 @@ async function route(url, req, env, ctx) {
   if (p === '/api/allvenues') {
     // 설정 탭용: 지금 열린 전시가 있는 모든 공간 (전시 목록 없이 요약만)
     const venues = ds.venues
-      .map(v => ({ id: v.id, name: v.name, addr: v.addr, lat: v.lat, lng: v.lng, active: v.ex.filter(e => e.end >= today).length, distance: Math.round(haversine(lat, lng, v.lat, v.lng)) }))
+      .map(v => ({ id: v.id, name: v.name, addr: v.addr, lat: v.lat, lng: v.lng, active: v.ex.filter(e => e.end >= today).length, firstSeen: v.firstSeen, distance: Math.round(haversine(lat, lng, v.lat, v.lng)) }))
       .filter(v => v.active)
       .sort((a, b) => a.distance - b.distance);
     return json({ venues });
@@ -292,16 +292,37 @@ async function refreshApis(env) {
 // 공공 API 결과 + 홈페이지 수집 결과를 합쳐 공간 단위로 묶음
 async function rebuild(env) {
   const api = (await env.CACHE.get(API_KEY, 'json')) || { items: [], stats: {} };
+  const coordStats = await fillSourceCoords(env).catch(e => ({ error: String(e.message || e) }));
   const crawled = await crawlItems(env);
-  const stats = { version: VERSION, ...api.stats, apiAt: api.at, crawledExhibitions: crawled.length };
+  const stats = { version: VERSION, ...api.stats, apiAt: api.at, crawledExhibitions: crawled.length, sourceCoords: coordStats };
   const today = kstToday();
   const all = [...api.items, ...crawled];
   const active = all.filter(it => it.end >= today);
   stats.endedDropped = all.length - active.length;
   const venues = buildVenues(active, stats);
   stats.newToday = await stampFirstSeen(env, venues);
+  stats.newVenuesToday = venues.filter(v => v.firstSeen > new Date(Date.now() - 86400e3).toISOString()).length;
   await env.CACHE.put(DATASET_KEY, JSON.stringify({ updatedAt: new Date().toISOString(), venues, stats }));
   return stats;
+}
+
+// sources.js에 좌표 없이 주소만 적은 공간: 주소(안 되면 이름)로 좌표를 찾아 KV에 저장. 한 번에 몇 곳씩
+async function fillSourceCoords(env) {
+  const coords = (await env.CACHE.get(COORDS_KEY, 'json')) || {};
+  const list = await loadSources(env);
+  const need = list.filter(s => !(Number.isFinite(s.lat) && Number.isFinite(s.lng)) && s.addr && !(coords[s.id] && coords[s.id].addr === s.addr && coords[s.id].failedAt && Date.now() - coords[s.id].failedAt < 86400e3));
+  let done = 0, failed = [];
+  for (const s of need.slice(0, 12)) {
+    let hit = null;
+    for (const term of [s.addr, s.name]) {
+      const g = await geocode(env, term, 36.4, 127.8).catch(() => ({ places: [] }));
+      if (g.places[0]) { hit = g.places[0]; break; }
+    }
+    if (hit) { coords[s.id] = { addr: s.addr, lat: hit.lat, lng: hit.lng }; done++; }
+    else { coords[s.id] = { addr: s.addr, failedAt: Date.now() }; failed.push(s.id); }
+  }
+  if (need.length) await env.CACHE.put(COORDS_KEY, JSON.stringify(coords));
+  return { need: need.length, done, failed };
 }
 
 // 전시마다 '처음 들어온 시각'을 붙임 → 앱에서 NEW 표시에 사용
@@ -320,8 +341,17 @@ async function stampFirstSeen(env, venues) {
     keys.forEach(k => { if (!m[k] || m[k] > fs) m[k] = fs; live.add(k); });
     e.firstSeen = fs; e.nk = keys[0];
   }
-  // 끝난 전시 기록이 너무 쌓이면 정리
-  const all = Object.keys(m);
+  // 공간도 '처음 들어온 시각' (설정 목록의 NEW). 처음 켤 때 이미 있던 공간은 옛날 시각
+  const venueFirstRun = !Object.keys(m).some(k => k.startsWith('V|'));
+  for (const v of venues) {
+    const keys = ['V|' + v.id, 'V|n:' + norm(v.name)];
+    const known = keys.map(k => m[k]).filter(Boolean).sort()[0];
+    const fs = known || (venueFirstRun ? '2000-01-01T00:00:00.000Z' : now);
+    keys.forEach(k => { if (!m[k] || m[k] > fs) m[k] = fs; live.add(k); });
+    v.firstSeen = fs;
+  }
+  // 끝난 전시 기록이 너무 쌓이면 정리 (공간 기록은 남김)
+  const all = Object.keys(m).filter(k => !k.startsWith('V|'));
   if (all.length > 6000) all.filter(k => !live.has(k)).sort((a, b) => m[a].localeCompare(m[b])).slice(0, all.length - 4000).forEach(k => delete m[k]);
   await env.CACHE.put(FS_KEY, JSON.stringify(m));
   return fresh;
