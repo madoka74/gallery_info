@@ -174,6 +174,12 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .pv .ok{color:var(--accent);font-size:12.5px;font-weight:600}
 .srow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding-block:8px;border-top:1px solid var(--line)}
 .srow:first-child{border-top:0}
+.duprow{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.dside{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:10px;background:var(--chip)}
+.dside strong{font-size:14px;font-weight:600;word-break:keep-all;overflow-wrap:anywhere}
+.dside small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.dmid{font-size:11.5px;color:var(--muted);padding-left:10px}
+.dbtns{display:flex;gap:8px;justify-content:flex-end}
 .srow small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .srow .bad{color:var(--warn)}
 details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
@@ -828,8 +834,12 @@ async function loadDupes(){
   try{
     const r=await adminApi('/api/dupes');
     const c=$('#dupcount');if(c)c.textContent=r.candidates.length;
-    box.innerHTML=r.candidates.length?r.candidates.map(x=>`<div class="srow"><div class="vtext"><strong>${esc(x.a)} ↔ ${esc(x.b)}</strong><small><span class="mono">${x.meters}m · 닮음 ${x.similarity}</span></small></div>
-      <button class="btn ghost sm" data-vrule="merge" data-a="${esc(x.aId)}" data-b="${esc(x.bId)}">합치기</button><button class="btn ghost sm" data-vrule="split" data-a="${esc(x.aId)}" data-b="${esc(x.bId)}">다른 공간</button></div>`).join('')
+    const side=(n,addr,cnt,exs)=>`<div class="dside"><strong>${esc(n)}</strong><small>${esc(addr||'주소 없음')} · 전시 ${cnt||0}개</small>${exs&&exs.length?`<small class="dex">${exs.map(esc).join(' / ')}</small>`:''}</div>`;
+    box.innerHTML=r.candidates.length?r.candidates.map(x=>`<div class="duprow">
+      ${side(x.a,x.aAddr,x.aCount,x.aEx)}
+      <div class="dmid mono">↕ ${x.meters}m 떨어짐 · 이름 닮음 ${Math.round(x.similarity*100)}%</div>
+      ${side(x.b,x.bAddr,x.bCount,x.bEx)}
+      <div class="dbtns"><button class="btn ghost sm" data-vrule="merge" data-a="${esc(x.aId)}" data-b="${esc(x.bId)}">같은 공간 · 합치기</button><button class="btn ghost sm" data-vrule="split" data-a="${esc(x.aId)}" data-b="${esc(x.bId)}">다른 공간</button></div></div>`).join('')
       :'<p class="note">중복 후보가 없어요.</p>';
   }catch(err){box.innerHTML=`<p class="note">${esc(err.message)}</p>`}
 }
@@ -1091,7 +1101,7 @@ document.addEventListener('input',ev=>{if(pv&&ev.target.id&&ev.target.id.startsW
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-02.34';
+const APP_VER='2026-10-02.35';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
