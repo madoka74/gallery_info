@@ -1144,7 +1144,7 @@ function closeVisitDialog(){$('#visitdlg').hidden=true;dlgKey=null}
 /* ---------- 지도: 기준 위치 → 전시장 ----------
    카카오 JavaScript 키(KAKAO_JS_KEY)가 있으면 카카오 지도, 없거나 실패하면 오픈스트리트맵(키 필요 없음) */
 const loadScript=src=>new Promise((ok,no)=>{const js=document.createElement('script');js.src=src;js.onload=ok;js.onerror=()=>no(new Error('지도를 불러오지 못했어요'));document.head.appendChild(js)});
-let mapRoute=null,mapSeq=0,pendingRoute=null;
+let mapRoute=null,mapSeq=0,pendingRoute=null,kCur=[],kRedrawT=[];
 let mapKind=null,kmap=null,klayers=[],lmap=null,llayer=null,leafletP=null,kakaoP=null;
 function loadKakao(key){
   if(window.kakao&&kakao.maps&&kakao.maps.LatLng)return Promise.resolve();
@@ -1172,8 +1172,15 @@ async function drawKakao(o,v){
   // 시트가 다 펼쳐진 뒤에 크기를 다시 재고 그려야 선이 처음부터 제대로 보임
   await nextFrame();kmap.relayout();
   const fit=pts=>{const bd=new kakao.maps.LatLngBounds();pts.forEach(p=>bd.extend(p));kmap.setBounds(bd,70,48,48,48)};
-  // 지도 이동·확대가 끝난 뒤 선을 한 번 더 붙여서, 움직이지 않아도 바로 보이게
-  const redrawOnIdle=lines=>kakao.maps.event.addListener(kmap,'idle',function h(){kakao.maps.event.removeListener(kmap,'idle',h);lines.forEach(l=>{l.setMap(null);l.setMap(kmap)})});
+  // 카카오 지도는 화면 맞춤 직후 선의 일부만 그려 두는 경우가 있어서(손으로 움직이면 다 보임),
+  // 맞춤이 끝난 뒤 몇 번에 걸쳐 크기를 다시 재고 선을 다시 붙여 '움직인 것과 같은' 상태로 만듦
+  // 지금 지도에 있어야 할 선만 다시 붙임 (예전 직선이 되살아나지 않게 항상 kCur 기준)
+  const redrawOnIdle=lines=>{
+    kCur=lines;kRedrawT.forEach(clearTimeout);
+    const again=()=>{if(!kmap||$('#mapdlg').hidden)return;kmap.relayout();kmap.setCenter(kmap.getCenter());kCur.forEach(l=>{l.setMap(null);l.setMap(kmap)})};
+    kRedrawT=[0,150,400,900].map(ms=>setTimeout(again,ms));
+    kakao.maps.event.addListener(kmap,'tilesloaded',function h(){kakao.maps.event.removeListener(kmap,'tilesloaded',h);again()});
+  };
   const line=(path,dash)=>[
     new kakao.maps.Polyline({path,strokeWeight:dash?6:10,strokeColor:ROUTE_EDGE,strokeOpacity:1,strokeStyle:'solid'}),
     new kakao.maps.Polyline({path,strokeWeight:dash?4:6,strokeColor:ROUTE,strokeOpacity:1,strokeStyle:dash?'shortdash':'solid'})];
@@ -1181,13 +1188,13 @@ async function drawKakao(o,v){
   let lines=line([a,b],true);
   klayers=[...lines,pin(a,o.name,'from'),pin(b,v.name,'to')];
   klayers.forEach(x=>x.setMap(kmap));
-  redrawOnIdle(lines);fit([a,b]);
+  fit([a,b]);redrawOnIdle(lines);
   mapRoute=pts=>{ // 도보 경로가 오면 직선 대신 실제 길로
     lines.forEach(l=>l.setMap(null));
     const path=pts.map(([la,ln])=>new kakao.maps.LatLng(la,ln));
     lines=line(path,false);lines.forEach(l=>l.setMap(kmap));
     klayers=[...lines,...klayers.slice(2)];
-    redrawOnIdle(lines);fit(path);
+    fit(path);redrawOnIdle(lines);
   };
   if(pendingRoute){mapRoute(pendingRoute);pendingRoute=null}
 }
@@ -1574,7 +1581,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.48';
+const APP_VER='2026-10-03.49';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
