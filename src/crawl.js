@@ -94,7 +94,8 @@ export async function crawlBatch(env, opts = {}) {
     const prev = state[src.id] || {};
     if (quotaHit) { report.push({ id: src.id, name: src.name, skipped: 'Gemini 할당량 초과·과부하로 다음에 다시' }); continue; }
     try {
-      const r = await crawlOne(env, src, prev, opts.force);
+      // forceNext: 관리자가 '다시 읽기'를 예약한 곳 → 페이지가 그대로여도 새로 추출
+      const r = await crawlOne(env, src, prev, opts.force || !!prev.forceNext);
       state[src.id] = { ...r, checkedAt: Date.now(), nextAt: Date.now() + RECHECK_MS, ok: true, error: '' };
     } catch (e) {
       const msg = String(e.message || e).slice(0, 300);
@@ -108,6 +109,22 @@ export async function crawlBatch(env, opts = {}) {
   }
   await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
   return report;
+}
+// 관리자: 여러 곳을 '다음 순서에 새로 읽기'로 예약 (매시 크론이 4곳씩 처리, /api/crawl을 부르면 바로 다음 4곳)
+export async function scheduleRecrawl(env, ids) {
+  const SOURCES = await loadSources(env);
+  const state = (await env.CACHE.get(CRAWL_KEY, 'json')) || {};
+  const want = ids === 'all' ? SOURCES.map(s => s.id) : (Array.isArray(ids) ? ids : String(ids || '').split(',')).map(x => String(x).trim()).filter(Boolean);
+  const known = new Set(SOURCES.map(s => s.id)), done = [], skipped = [];
+  for (const id of want) {
+    if (!known.has(id)) { skipped.push({ id, why: '없는 id' }); continue; }
+    const st = state[id] || {};
+    if (/robots\.txt/.test(st.error || '')) { skipped.push({ id, why: 'robots.txt가 막음' }); continue; }
+    state[id] = { ...st, nextAt: 0, forceNext: true };
+    done.push(id);
+  }
+  await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
+  return { scheduled: done.length, ids: done, skipped, hours: Math.ceil(done.length / 4) };
 }
 const isTransient = msg => /^Gemini (429|5\d\d)|HTTP (5\d\d)|연결 실패|timed? ?out|렌더링 실패/i.test(msg);
 
@@ -276,7 +293,8 @@ export function stabilize(items, prevItems, pageText = '') {
     used.add(o.id);
     const title = onPage(n.title) && !onPage(o.title) ? n.title : o.title;
     return { ...n, id: o.id, title, posterTried: o.posterTried || n.posterTried, sub: o.sub || n.sub, artist: o.artist || n.artist,
-      poster: o.poster || n.poster, link: o.link || n.link, fee: n.fee || o.fee, hall: n.hall || o.hall };
+      // 포스터는 새로 읽은 쪽 우선 (공식 이미지 고르는 방식이 좋아지면 바로 반영). 못 찾았으면 지난번 것
+      poster: n.poster || o.poster, link: o.link || n.link, fee: n.fee || o.fee, hall: n.hall || o.hall };
   });
 }
 export function similarTitle(a, b) {

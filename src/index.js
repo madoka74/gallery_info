@@ -13,7 +13,7 @@
 //   KAKAO_REST_KEY  (선택) 기준 위치 검색용 카카오 로컬 API 키. 없으면 OpenStreetMap으로 검색
 
 import { pushRoute, pushDaily } from './push.js';
-import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect, COORDS_KEY, similarTitle } from './crawl.js';
+import { crawlBatch, scheduleRecrawl, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect, COORDS_KEY, similarTitle } from './crawl.js';
 
 // 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
 // from~to는 '기간이 겹치는' 항목을 돌려줌. 정상 resultCode는 00.
@@ -24,7 +24,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.56';
+const VERSION = '2026-10-03.57';
 const PAGE_VENUES = 10;
 const SUG_PREFIX = 'sug:';          // 공간 제안 (값은 비우고 이름·시각은 메타데이터에)
 const DATASET_KEY = 'dataset:v1';
@@ -157,6 +157,10 @@ async function route(url, req, env, ctx) {
     const keys = (Array.isArray(body.keys) ? body.keys : []).map(String).filter(k => k.startsWith(SUG_PREFIX)).slice(0, 200);
     await Promise.all(keys.map(k => env.CACHE.delete(k)));
     return json({ ok: true, deleted: keys.length });
+  }
+  if (p === '/api/admin/recrawl') {
+    // ?ids=leeum,hoam 또는 ?ids=all → 다음 순서에 새로 읽기(페이지가 그대로여도 다시 추출)
+    return json(await scheduleRecrawl(env, q('ids')));
   }
   if (p === '/api/admin/pushrun') {
     // 마감 알림을 지금 바로 한 번 돌려 봄 (이미 알린 전시는 다시 안 보냄)
