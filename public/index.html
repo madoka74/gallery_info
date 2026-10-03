@@ -210,6 +210,9 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .dside small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .dmid{font-size:11.5px;color:var(--muted);padding-left:10px}
 .dbtns{display:flex;gap:8px;justify-content:flex-end}
+.sugrow{padding:10px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.sugrow .sugn{color:var(--accent);font-weight:600;font-size:12px}
+.dbtns a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .srow small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .srow .bad{color:var(--warn)}
 details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
@@ -522,6 +525,23 @@ async function pushOffNow(){
   if(ep)await api('/api/push/delete',{endpoint:ep});   // 실패하면 AL.ep가 남아 다음에 다시 시도
   if(AL.on)return;
   AL.ep='';AL.sig='';AL.key='';AL.err='';saveAL();
+}
+// 공간 제안 보내기. 이미 있는 공간과 이름이 닮았으면 한 번 더 눌러야 보냄
+var sugBusy=false,sugArmed='';
+async function sendSuggestion(){
+  const inp=$('#sugq'),btn=$('#sugbtn');if(!inp||!btn||sugBusy)return;
+  const name=inp.value.replace(/\s+/g,' ').trim();
+  if(name.length<2){inp.focus();return}
+  const k=nq(name),hit=k.length>=2?(allVenues||[]).find(v=>{const m=nq(v.name);return m.includes(k)||(m.length>=2&&k.includes(m))}):null;
+  if(hit&&sugArmed!==k){
+    sugArmed=k;btn.textContent='그래도 보내기';toast(`이미 있어요 · ${hit.name}`);
+    setTimeout(()=>{if(sugArmed===k){sugArmed='';if(btn.isConnected)btn.textContent='보내기'}},4000);
+    return;
+  }
+  sugArmed='';sugBusy=true;btn.disabled=true;btn.textContent='보내는 중…';
+  try{await api('/api/suggest',{name});inp.value='';inp.blur();toast('보냈어요. 고마워요!')}
+  catch(err){toast(err.message)}
+  finally{sugBusy=false;if(btn.isConnected){btn.disabled=false;btn.textContent='보내기'}}
 }
 function renderAlert(){
   const el=$('#alertsec');if(!el)return;
@@ -1047,6 +1067,10 @@ function renderSettings(){
   <section class="sec" id="syncsec"></section>
   <section class="sec" id="adminsec"></section>
   <section class="sec">
+    <h3>공간 제안</h3>
+    <form class="locform" id="sugform"><input class="field" id="sugq" type="text" placeholder="보고 싶은 전시공간 이름" maxlength="100" autocomplete="off" enterkeyhint="send"><button class="btn ghost locbtn" type="submit" id="sugbtn">보내기</button></form>
+  </section>
+  <section class="sec">
     <h3><button class="h3btn" data-act="admin-open" aria-label="데이터">데이터</button></h3>
     <form class="locform" id="tokform" hidden><input class="field" id="tokin" type="password" placeholder="관리자 토큰" autocomplete="off"><button class="btn ghost locbtn" type="submit">확인</button></form>
     <p class="note" id="dstatus">${statusCache?statusText(statusCache):'상태 확인 중…'}</p>
@@ -1119,10 +1143,23 @@ function renderAdmin(){
   el.innerHTML=`<h3>공간 관리</h3>
     <form class="locform" id="addform"><input class="field" id="addurl" type="url" inputmode="url" placeholder="홈페이지 주소" autocomplete="off"><button class="btn locbtn" type="submit">진단</button></form>
     <div id="probebox"></div>
+    <details id="sugdetails"><summary>공간 제안 <span class="mono" id="sugcount">…</span></summary><div id="suglist"><p class="note">불러오는 중…</p></div></details>
     <details id="srcdetails"><summary>등록된 공간 <span class="mono" id="srccount">…</span></summary><div id="srclist"><p class="note">불러오는 중…</p></div></details>
     <details id="dupdetails"><summary>공간 중복 후보 <span class="mono" id="dupcount">…</span></summary><p class="note">한 번 정하면 계속 유지돼요. 합치면 다음 갱신부터 한 공간으로, ‘다른 공간’을 고르면 다시 후보에 안 나와요.</p><div id="duplist"><p class="note">불러오는 중…</p></div></details>
     <div><button class="btn ghost sm" data-act="admin-logout">이 기기에서 관리자 토큰 지우기</button></div>`;
-  renderProbe();loadSrcList();loadDupes();
+  renderProbe();loadSrcList();loadDupes();loadSugs();
+}
+// 지인들이 보낸 공간 제안 (같은 이름은 묶어서 횟수로)
+async function loadSugs(){
+  const box=$('#suglist');if(!box)return;
+  try{
+    const r=await adminApi('/api/admin/suggestions');
+    const c=$('#sugcount');if(c)c.textContent=r.list.length;
+    box.innerHTML=r.list.length?r.list.map(x=>`<div class="sugrow">
+      <div class="dside"><strong>${esc(x.name)}${x.count>1?` <span class="mono sugn">×${x.count}</span>`:''}</strong><small>${esc(fmtWhen(x.last))}${x.exists.length?` · 비슷한 공간 있음: ${x.exists.map(esc).join(', ')}`:''}</small></div>
+      <div class="dbtns"><a class="btn ghost sm" href="https://www.google.com/search?q=${encodeURIComponent(x.name+' 전시')}" target="_blank" rel="noopener">찾아보기</a><button class="btn ghost sm" data-sugdone="${esc(JSON.stringify(x.keys))}">처리 완료</button></div></div>`).join('')
+      :'<p class="note">아직 받은 제안이 없어요.</p>';
+  }catch(err){box.innerHTML=`<p class="note">${esc(err.message)}</p>`}
 }
 async function loadDupes(){
   const box=$('#duplist');if(!box)return;
@@ -1512,6 +1549,8 @@ document.addEventListener('click',ev=>{
   if(d.act==='visit-save'){saveVisitDate();return}
   if(d.act==='visit-remove'){removeVisit();return}
   if(d.act==='visit-close'){closeVisitDialog();return}
+  if(d.sugdone){t.disabled=true;let keys=[];try{keys=JSON.parse(d.sugdone)}catch(e){}
+    adminApi('/api/admin/suggestions/delete',{keys}).then(()=>{toast('처리 완료');loadSugs()}).catch(err=>{toast(err.message);t.disabled=false});return}
   if(d.vrule){t.disabled=true;t.textContent='처리 중…';
     adminApi('/api/admin/venues/rule',{a:d.a,b:d.b,action:d.vrule}).then(()=>{toast(d.vrule==='merge'?'한 공간으로 합쳤어요':'다른 공간으로 정했어요');allVenues=null;loadAll(true).then(()=>{renderVList();loadDupes()})}).catch(err=>{toast(err.message);t.disabled=false});return}
   if(d.region){S.rexp=S.rexp||{};S.rexp[d.region]=t.getAttribute('aria-expanded')!=='true';save();const page=$('#view-settings'),top=page.scrollTop;renderVList();page.scrollTop=top;return}
@@ -1552,6 +1591,7 @@ document.addEventListener('keydown',ev=>{
 document.addEventListener('input',ev=>{if(ev.target.id==='vq')renderVList()});
 document.addEventListener('submit',ev=>{
   if(ev.target.id==='locform'){ev.preventDefault();const q=($('#locq').value||'').trim();if(q)searchPlace(q)}
+  if(ev.target.id==='sugform'){ev.preventDefault();sendSuggestion();return}
   if(ev.target.id==='tokform'){ev.preventDefault();
     const tok=($('#tokin').value||'').trim();if(!tok)return;
     const btn=ev.target.querySelector('button');btn.disabled=true;
@@ -1758,7 +1798,7 @@ save();
 show((location.hash||'').slice(1)||'near');
 alertBoot();
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.55';
+const APP_VER='2026-10-03.56';
 let verAt=0;
 function checkVer(){
   verAt=Date.now();
