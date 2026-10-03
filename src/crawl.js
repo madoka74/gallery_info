@@ -291,7 +291,8 @@ export function stabilize(items, prevItems, pageText = '') {
   const used = new Set(), page = tkey(pageText);
   const onPage = t => { const k = tkey(t); return k.length >= 2 && page.includes(k); };
   return items.map(n => {
-    const sameD = x => x.start === n.start && x.end === n.end;
+    // 시작일을 몰라 오늘로 넣은 전시는 끝 날짜만 같으면 같은 기간으로 봄 (시작일이 날마다 바뀌지 않게 지난번 값 유지)
+    const sameD = x => (x.start === n.start || (n.startGuess && x.startGuess)) && x.end === n.end;
     const soleDates = prevItems.filter(o => !used.has(o.id) && sameD(o)).length === 1 && items.filter(sameD).length === 1;
     const o = prevItems.find(o => !used.has(o.id) && sameD(o) && similarTitle(o.title, n.title))
       || prevItems.find(o => !used.has(o.id) && tkey(o.title) === tkey(n.title))
@@ -300,7 +301,7 @@ export function stabilize(items, prevItems, pageText = '') {
     if (!o) return n;
     used.add(o.id);
     const title = onPage(n.title) && !onPage(o.title) ? n.title : o.title;
-    return { ...n, id: o.id, title, posterTried: o.posterTried || n.posterTried, sub: o.sub || n.sub, artist: o.artist || n.artist,
+    return { ...n, id: o.id, title, start: n.startGuess && o.start ? o.start : n.start, posterTried: o.posterTried || n.posterTried, sub: o.sub || n.sub, artist: o.artist || n.artist,
       // 포스터는 새로 읽은 쪽 우선 (공식 이미지 고르는 방식이 좋아지면 바로 반영). 못 찾았으면 지난번 것
       poster: n.poster || o.poster, link: o.link || n.link, fee: n.fee || o.fee, hall: n.hall || o.hall };
   });
@@ -537,6 +538,9 @@ async function extract(env, src, text, url) {
 
 규칙:
 - 이 공간에서 지금 진행 중이거나 앞으로 열릴 전시만 뽑아라. 이미 끝난 전시, 지난 전시 아카이브, 뉴스, 이벤트, 교육 프로그램, 공연은 제외.
+- 이 공간 밖(다른 미술관·외부 장소·Offsite·온라인 전시)에서 열리는 전시는 제외.
+- 제목이 따로 없고 작가 이름만 보이면, link 주소(slug)나 이미지 설명에 제목이 있으면 그것을 쓰고, 없으면 작가 이름을 제목으로 쓴다.
+- 'until October 24', '~10.24까지'처럼 끝 날짜만 있으면 start는 빈 문자열, end만 채운다.
 ${src.branch ? `- 이 페이지에는 여러 지점·도시의 전시가 섞여 있을 수 있다. "${src.branch}"에 해당하는 전시만 포함하고, 다른 지점이라고 분명히 적힌 전시는 제외. 지점 표기가 없으면 제외하지 말고 포함(기간이 없으면 link를 채움).\n` : ''}- 제목 앞뒤의 판촉 문구([개막특가 30% 할인], [기간 연장], [최대 44% 할인], NEW, 예매 등)는 빼고 전시 제목만.
 - 날짜는 YYYY-MM-DD로. 연도가 없으면 오늘 기준으로 가장 자연스러운 연도를 쓴다.
 - 현재 전시 목록인데 기간이 페이지에 안 적혀 있으면 start·end를 빈 문자열로 두고, 그 전시의 상세 페이지 link는 반드시 채운다.
@@ -611,10 +615,16 @@ export function clean(list, text, today) {
     if (!title) continue;
     const key = title.replace(/\s+/g, '').toLowerCase();
     if (seen.has(key)) continue;
+    const raw = String(x.link || '').trim(), hasLink = raw && /^https?:\/\//.test(raw) && text.includes(raw);
     if (!start || !end) {
-      // 기간 없음: 상세 페이지 주소가 확실하면 나중에 열어 봄 (원래 주소 그대로 사용)
-      const raw = String(x.link || '').trim();
-      if (raw && /^https?:\/\//.test(raw) && text.includes(raw)) { seen.add(key); pending.push({ title, link: raw }); }
+      // 기간 없음(또는 끝 날짜만): 상세 페이지 주소가 확실하면 나중에 열어 봄 (원래 주소 그대로 사용)
+      if (hasLink) { seen.add(key); pending.push({ title, link: raw }); continue; }
+      // 상세 페이지가 없고 끝 날짜만 있으면 진행 중으로 보고 넣음. id는 끝 날짜 기준이라 날마다 바뀌지 않음
+      if (end && !start && end >= today) {
+        seen.add(key);
+        out.push({ id: 'w' + hashStr(title + '~' + end), title, sub: String(x.subtitle || '').trim(), artist: String(x.artists || '').trim(),
+          start: today, startGuess: true, end, fee: String(x.fee || '').trim(), genre: '전시', poster: inText(String(x.poster || '').trim()), link: '', hall: String(x.hall || '').trim() });
+      }
       continue;
     }
     if (end < today || end < start) continue;
