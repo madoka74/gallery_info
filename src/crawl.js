@@ -127,6 +127,7 @@ export async function scheduleRecrawl(env, ids) {
   return { scheduled: done.length, ids: done, skipped, hours: Math.ceil(done.length / 4) };
 }
 const CARRY_MS = 7 * 86400e3;
+const isBlockPage = t => t.length < 1500 && /web ?firewall|security polic|have been blocked|access denied|request blocked|접근이 차단|보안 정책|비정상적인 접근/i.test(t);
 const isTransient = msg => /^Gemini (429|5\d\d)|HTTP (5\d\d)|연결 실패|timed? ?out|렌더링 실패/i.test(msg);
 
 export async function crawlItems(env) {
@@ -209,6 +210,8 @@ async function crawlOne(env, src, prev, force) {
     if (found) { url = found; page = await getPage(env, src, url); }
   }
   if (!page.ok) throw new Error(page.error);
+  // 사이트 방화벽(WAF)·봇 차단 안내문만 받은 경우: 전시가 없는 걸로 보지 않고 오류로 남김 (지난 결과 유지)
+  if (isBlockPage(page.text)) throw new Error('사이트 방화벽이 접속을 막고 있습니다');
   // 렌더링이 꼭 필요한 사이트인데 렌더링이 막혔으면(한도 초과·시간 초과) 빈 껍데기로 제미나이를 부르지 않고 1시간 뒤 다시
   if (src.render && page.via === 'html' && page.renderError && page.text.length < 3000) throw new Error(page.renderError);
 
@@ -245,6 +248,7 @@ async function crawlOne(env, src, prev, force) {
     const more = await extractDetails(env, src, r.pending.slice(0, page.via === 'render' ? 4 : DETAIL_MAX), page.via === 'render');
     const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
     items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
+    items = addEndOnly(items, more, r.pending);
   }
   // 같은 전시를 매번 조금씩 다르게 읽어도(제목 한두 글자) 앞서 쓰던 제목·id를 그대로 유지 → 전시가 바뀌거나 NEW로 다시 뜨지 않게
   items = stabilize(items, prev.items || [], page.text);
@@ -553,6 +557,16 @@ ${text}`;
   return clean(await gemini(env, prompt), text, today);
 }
 
+// 상세 페이지에서도 기간을 못 찾았지만 목록에 끝 날짜('until 10.24')가 있던 전시는 진행 중으로 넣음
+function addEndOnly(items, more, pending) {
+  const today = kstToday(), seenLinks = new Set(more.map(x => x.link)), k = t => t.replace(/\s+/g, '').toLowerCase();
+  const out = items.slice();
+  for (const p of pending) {
+    if (!p.end || p.end < today || seenLinks.has(p.link) || out.some(x => k(x.title) === k(p.title))) continue;
+    out.push({ id: 'w' + hashStr(p.title + '~' + p.end), title: p.title, sub: '', artist: p.artist || '', start: today, startGuess: true, end: p.end, fee: '', genre: '전시', poster: p.poster || '', link: p.link, hall: '' });
+  }
+  return out;
+}
 // 상세 페이지 여러 개를 한 번에 넘겨 기간·포스터를 뽑음
 async function extractDetails(env, src, pending, listViaRender) {
   const parts = [];
@@ -618,7 +632,7 @@ export function clean(list, text, today) {
     const raw = String(x.link || '').trim(), hasLink = raw && /^https?:\/\//.test(raw) && text.includes(raw);
     if (!start || !end) {
       // 기간 없음(또는 끝 날짜만): 상세 페이지 주소가 확실하면 나중에 열어 봄 (원래 주소 그대로 사용)
-      if (hasLink) { seen.add(key); pending.push({ title, link: raw }); continue; }
+      if (hasLink) { seen.add(key); pending.push({ title, link: raw, end: !start && end >= today ? end : '', poster: inText(String(x.poster || '').trim()), artist: String(x.artists || '').trim() }); continue; }
       // 상세 페이지가 없고 끝 날짜만 있으면 진행 중으로 보고 넣음. id는 끝 날짜 기준이라 날마다 바뀌지 않음
       if (end && !start && end >= today) {
         seen.add(key);
@@ -700,6 +714,7 @@ export async function inspect(env, src, pageUrl) {
     const more = await extractDetails(env, src, r.pending.slice(0, page.via === 'render' ? 4 : DETAIL_MAX), page.via === 'render');
     const have = new Set(items.map(x => x.title.replace(/\s+/g, '').toLowerCase()));
     items = items.concat(more.filter(x => !have.has(x.title.replace(/\s+/g, '').toLowerCase())));
+    items = addEndOnly(items, more, r.pending);
   }
   return { ok: true, url: pageUrl, via: page.via, render: page.via === 'render', items, pending: r.pending.length,
     hash: await sha1(page.text), textLength: page.text.length, renderError: page.renderError || '' };
