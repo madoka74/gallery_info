@@ -12,6 +12,7 @@
 //   CF_ACCOUNT_ID, CF_API_TOKEN  (선택) 자바스크립트로 그려지는 페이지를 읽는 브라우저 렌더링용
 //   KAKAO_REST_KEY  (선택) 기준 위치 검색용 카카오 로컬 API 키. 없으면 OpenStreetMap으로 검색
 
+import { pushRoute, pushDaily } from './push.js';
 import { crawlBatch, crawlItems, crawlStatus, peek, loadSources, saveSource, deleteSource, storeCrawlResult, identify, inspect, COORDS_KEY, similarTitle } from './crawl.js';
 
 // 한눈에보는문화정보 조회서비스 · 기간별(period2). XML 전용, 페이지 크기는 numOfrows(소문자 r),
@@ -23,7 +24,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.54';
+const VERSION = '2026-10-03.55';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -55,7 +56,9 @@ export default {
       const api = await env.CACHE.get(API_KEY, 'json');
       if (!api || Date.now() - Date.parse(api.at) > API_EVERY_MS) await refreshApis(env).catch(() => {});
       await crawlBatch(env).catch(() => {});
-      await rebuild(env);
+      await rebuild(env).catch(() => {});
+      // 마감 알림: 한국 시간 오전 10시에 하루 한 번
+      await pushDaily(env, await env.CACHE.get(DATASET_KEY, 'json'), kstToday()).catch(() => {});
     })());
   }
 };
@@ -127,6 +130,10 @@ async function route(url, req, env, ctx) {
     const stats = await rebuild(env);
     return json({ ok: true, rules: { merge: rules.merge.length, split: rules.split.length }, stats });
   }
+  if (p === '/api/admin/pushrun') {
+    // 마감 알림을 지금 바로 한 번 돌려 봄 (이미 알린 전시는 다시 안 보냄)
+    return json(await pushDaily(env, await getDataset(env, ctx), kstToday(), true));
+  }
   if (p === '/api/admin/venues/rules') {
     return json((await env.CACHE.get(RULES_KEY, 'json')) || { merge: [], split: [] });
   }
@@ -179,6 +186,13 @@ async function route(url, req, env, ctx) {
     const savedAt = new Date().toISOString();
     await env.CACHE.put(key, JSON.stringify({ data, savedAt }), { expirationTtl: 400 * 86400 }); // 400일 동안 안 쓰면 지워짐
     return json({ ok: true, savedAt });
+  }
+
+  /* ---- 마감 알림 (웹 푸시) ---- */
+  if (p.startsWith('/api/push/')) {
+    const r = await pushRoute(p, body, env, url, () => getDataset(env, ctx), kstToday());
+    if (!r) return json({ error: 'not found' }, 404);
+    return json(r, r.status || 200);
   }
 
   if (p === '/api/img') {
