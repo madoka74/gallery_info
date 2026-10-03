@@ -64,9 +64,9 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .icon-btn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--surface);flex:none}
 .icon-btn svg{width:20px;height:20px}
 [data-star] svg,[data-heart] svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}
-[data-star][aria-pressed="true"]{color:var(--star)}
+[data-star][aria-pressed="true"]{color:var(--heart)}
 [data-star][aria-pressed="true"] svg{fill:currentColor}
-[data-heart][aria-pressed="true"]{color:var(--heart)}
+[data-heart][aria-pressed="true"]{color:var(--star)}
 [data-heart][aria-pressed="true"] svg{fill:currentColor}
 
 .info{flex:0 0 auto;max-height:64%;overflow-y:auto;padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px}
@@ -253,7 +253,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--fg);padding-block:4px}
 /* 하트 버튼: 배경 없이 크게, 다크에서도 잘 보이게 */
 .icon-btn[data-heart]{background:transparent!important;width:40px;height:40px;color:var(--muted);margin:-8px -8px -8px 0}
 .icon-btn[data-heart] svg{width:23px;height:23px;stroke-width:1.9}
-.icon-btn[data-heart][aria-pressed="true"]{color:var(--heart)}
+.icon-btn[data-heart][aria-pressed="true"]{color:var(--star)}
 .place .icon-btn[data-heart]{margin-top:-10px}
 /* 목록 구분선·끝 표시 */
 .divider{display:flex;align-items:center;gap:12px;height:44px;color:var(--muted);font-size:12px}
@@ -327,6 +327,19 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
 .leaflet-container{font-family:var(--f-body)}
 .walkt{display:inline-flex;align-items:center;gap:3px;color:var(--fg);font-weight:600}
 .walkt svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.ctxsearch{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:var(--muted);flex:none}
+.ctx .ctxsearch{padding:0;border:0;background:transparent}
+.ctxsearch svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.ctxsearch.on{color:var(--accent);background:var(--soft)!important}
+.views .view{transition:top .22s ease}
+.views.searching .view{top:56px}
+.sbar{position:absolute;left:0;right:0;top:0;height:48px;display:flex;align-items:center;gap:8px;z-index:3;animation:sdown .22s ease}
+@keyframes sdown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+.sbar .field{flex:1;min-width:0;height:44px;border-radius:12px;background:var(--surface);padding-left:38px}
+.sbar .sicon{position:absolute;left:12px;width:18px;height:18px;pointer-events:none;color:var(--muted);background:currentColor;-webkit-mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>') center/contain no-repeat;mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>') center/contain no-repeat}
+.sbar .sclose{height:44px;padding:0 6px;font-size:14px;color:var(--accent);font-weight:600;flex:none}
+.view.searchmode>:not(#sres){display:none!important}
+.sempty{height:120px;display:grid;place-items:center;color:var(--muted);font-size:14px}
 .kpin{display:flex;flex-direction:column;align-items:center;transform:translateY(8px)}
 .kpin.to{transform:translateY(10px)}
 .kpin span{background:#fff;color:#14171A;border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18);font:600 12px var(--f-body);padding:3px 8px;margin-bottom:6px;white-space:nowrap}
@@ -362,16 +375,17 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
     <div class="brand">가까운 <i>전시</i></div>
     <div class="ctx" id="ctx"></div>
   </header>
-  <main class="views">
+  <main class="views" id="views">
+    <form class="sbar" id="sbar" role="search" hidden><span class="sicon"></span><input class="field" id="sq" type="search" placeholder="전시·작가·공간" autocomplete="off" enterkeyhint="search"><button type="button" class="sclose" data-act="search-close">닫기</button></form>
     <section class="view feed" id="view-near" aria-label="근처 전시"></section>
-    <section class="view feed" id="view-heart" aria-label="하트 공간 전시" hidden></section>
+    <section class="view feed" id="view-heart" aria-label="즐겨찾는 공간 전시" hidden></section>
     <section class="view feed" id="view-my" aria-label="MY" hidden></section>
     <section class="view page" id="view-settings" aria-label="설정" hidden></section>
   </main>
   <nav class="nav" aria-label="탭">
     <button data-tab="near" aria-current="page"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>근처</button>
-    <button data-tab="heart"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/></svg>하트<span class="badge new" id="heartbadge" hidden></span></button>
-    <button data-tab="my"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.55 5.2 5.75.84-4.16 4.05.98 5.72L12 16.7l-5.12 2.7.98-5.72L3.7 9.64l5.75-.84z"/></svg>MY<span class="badge" id="mybadge" hidden></span></button>
+    <button data-tab="heart"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.55 5.2 5.75.84-4.16 4.05.98 5.72L12 16.7l-5.12 2.7.98-5.72L3.7 9.64l5.75-.84z"/></svg>즐겨찾기<span class="badge new" id="heartbadge" hidden></span></button>
+    <button data-tab="my"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/></svg>MY<span class="badge" id="mybadge" hidden></span></button>
     <button data-tab="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>설정<span class="badge new" id="setbadge" hidden></span></button>
   </nav>
 </div>
@@ -591,10 +605,11 @@ const ICON={
   x:'<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>',
   visit:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.3l2.6 2.6 5-5.4"/></svg>',
   pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
+  search:'<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>',
   walk:'<svg viewBox="0 0 24 24"><circle cx="13" cy="4.5" r="1.8"/><path d="M10.5 21l2-6 2.5 2.5V21M8 12.5l2.5-4.5 3 1 2 3 2.5 1M12.5 9.5l-1.5 5.5"/></svg>',
   frame:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="1.5"/><path d="M8.5 15.5l2.6-3 2 2.2 1.6-1.7 1.8 2.5"/></svg>'
 };
-// 숫자 앞에 작은 아이콘: ♥3 · ★1 · ✓2 · ▣4 (글자 대신)
+// 숫자 앞에 작은 아이콘: ★ 즐겨찾는 공간 · ♥ 보고 싶은 전시 · ✓ 본 전시 · ▣ 전시 수
 const stat=(icon,n,cls='')=>`<span class="stat ${cls}">${ICON[icon]}<span class="mono">${n}</span></span>`;
 
 /* ---------- 포스터: 실제 이미지 우선, 없거나 깨지면 자동 생성 ---------- */
@@ -741,7 +756,7 @@ function cardHTML(e,v,meta={}){
       <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}">${fresh?'<span class="newtag">NEW</span>':''}${visited?stampHTML(key):''}</div>
       <div class="ovl">
         <span class="chip mono">${meta.rank?`<b>${pad(meta.rank)}</b><i class="sep"></i>`:''}${fmtDist(d)}</span>
-        <div class="ovl-r"><span class="dchip ${st.kind}">${st.dday}</span><button class="icon-btn" data-visit="${esc(e.id)}" aria-pressed="${visited}" aria-label="본 전시로 표시">${ICON.visit}</button><button class="icon-btn" data-star="${esc(e.id)}" aria-pressed="${starred}" aria-label="MY에 담기">${ICON.star}</button></div>
+        <div class="ovl-r"><span class="dchip ${st.kind}">${st.dday}</span><button class="icon-btn" data-visit="${esc(e.id)}" aria-pressed="${visited}" aria-label="본 전시로 표시">${ICON.visit}</button><button class="icon-btn" data-star="${esc(e.id)}" aria-pressed="${starred}" aria-label="보고 싶은 전시">${ICON.heart}</button></div>
       </div>
     </div>
     <div class="info">
@@ -750,7 +765,7 @@ function cardHTML(e,v,meta={}){
       <dl class="label">
         ${e.artist?`<dt>작가</dt><dd>${esc(e.artist)}</dd>`:''}
         <dt>기간</dt><dd class="mono">${period(e)}</dd>
-        <dt>장소</dt><dd class="place"><button class="placebtn" data-map="${esc(e.id)}" aria-label="${esc(v.name)} 지도"><strong>${esc(v.name)}${ICON.pin}</strong>${e.hall||v.addr?`<small>${esc([e.hall,v.addr].filter(Boolean).join(' · '))}</small>`:''}</button><button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${hearted}" aria-label="선호 공간으로 하트">${ICON.heart}</button></dd>
+        <dt>장소</dt><dd class="place"><button class="placebtn" data-map="${esc(e.id)}" aria-label="${esc(v.name)} 지도"><strong>${esc(v.name)}${ICON.pin}</strong>${e.hall||v.addr?`<small>${esc([e.hall,v.addr].filter(Boolean).join(' · '))}</small>`:''}</button><button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${hearted}" aria-label="즐겨찾는 공간">${ICON.star}</button></dd>
         ${e.fee?`<dt>관람</dt><dd>${esc(e.fee)}</dd>`:''}
         ${e.link?`<dt>정보</dt><dd><a class="ext" href="${esc(e.link)}" target="_blank" rel="noopener">자세히 보기</a></dd>`:''}
       </dl>
@@ -838,7 +853,7 @@ async function renderHearts(){
   if(seq!==heartSeq)return;
   const hv=settingsList().filter(v=>isHeart(v.id));
   heartInfo={venues:hv.length,count:0};updateTop();
-  if(!hv.length){el.innerHTML=`<div class="empty"><h3>하트한 공간이 없어요</h3><p>카드나 설정에서 공간에 하트를 눌러 보세요.</p><button class="btn" data-goto="settings">공간 고르기</button></div>`;return}
+  if(!hv.length){el.innerHTML=`<div class="empty"><h3>즐겨찾는 공간이 없어요</h3><p>카드나 설정에서 공간의 별을 눌러 보세요.</p><button class="btn" data-goto="settings">공간 고르기</button></div>`;return}
   el.innerHTML=`<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span>불러오는 중</span></div>`;
   try{
     const res=await api('/api/venues',{ids:hv.map(v=>v.id)});
@@ -854,7 +869,7 @@ async function renderHearts(){
     el.innerHTML=n
       ?(fresh.length?`<div class="divider new"><span>NEW ${fresh.length}</span></div>`+cards(fresh)+`<div class="divider"></div>`:'')
         +cards(rest)+`<div class="loader"><span class="end">끝</span></div>`
-      :`<div class="empty"><h3>열린 전시가 없어요</h3><p>하트한 공간에 지금 전시가 없어요.</p></div>`;
+      :`<div class="empty"><h3>열린 전시가 없어요</h3><p>즐겨찾는 공간에 지금 전시가 없어요.</p></div>`;
     el.scrollTop=0;observePosters(el);
   }catch(err){
     if(seq!==heartSeq)return;
@@ -871,7 +886,7 @@ function renderMy(fromSync){
   const starred=S.stars.filter(s=>!isVisited(s)).sort((a,b)=>D(a.e.end)-D(b.e.end)||D(a.e.start)-D(b.e.start));
   const log=Object.entries(S.visited).filter(([,r])=>r&&r.e).map(([k,r])=>({...r,k})).sort((a,b)=>b.at.localeCompare(a.at));
   starred.forEach(s=>remember(s.e,s.v));log.forEach(r=>remember(r.e,r.v));
-  if(!starred.length&&!log.length){el.innerHTML=`<div class="empty"><h3>담은 전시가 없어요</h3><p>카드의 별과 체크를 눌러 보세요.</p><button class="btn" data-goto="near">근처 전시 보기</button></div>`;return}
+  if(!starred.length&&!log.length){el.innerHTML=`<div class="empty"><h3>담은 전시가 없어요</h3><p>카드의 하트와 체크를 눌러 보세요.</p><button class="btn" data-goto="near">근처 전시 보기</button></div>`;return}
   el.innerHTML=starred.map(({e,v})=>cardHTML(e,v)).join('')
     +(log.length?`<div class="divider"><span>${ICON.visit}관람 기록 <b class="mono">${log.length}</b></span></div>`+log.map(r=>cardHTML(r.e,r.v)).join(''):'')
     +`<div class="loader"><span class="end">끝</span></div>`;
@@ -935,7 +950,7 @@ function renderVList(){
   const custom=S.sort==='custom'&&!q;
   const row=(v,i,arr)=>{const on=isOn(v.id),nw=sessNew.has(v.id);return `
     <li class="vrow${on?'':' off'}${nw?' isnew':''}" data-vid="${esc(v.id)}">
-      <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${isHeart(v.id)}" aria-label="${esc(v.name)} 하트">${ICON.heart}</button>
+      <button class="icon-btn" data-heart="${esc(v.id)}" aria-pressed="${isHeart(v.id)}" aria-label="${esc(v.name)} 즐겨찾기">${ICON.star}</button>
       <div class="vtext"><strong>${nw?'<span class="vnew">NEW</span>':''}${esc(v.name)}</strong><small><span class="mono">${fmtDist(dist(v))}</span><i class="dot"></i>${v.active?`전시 <span class="mono">${v.active}</span>`:'전시 없음'}${v.addr?`<i class="dot"></i>${esc(v.addr)}`:''}</small></div>
       <label class="switch"><input type="checkbox" id="on-${esc(v.id)}" data-on="${esc(v.id)}" ${on?'checked':''}><span class="track"></span><span class="sr">${esc(v.name)} 근처 피드에 포함</span></label>
       ${custom&&on?`<div class="mv"><button data-move="${esc(v.id)}" data-dir="-1" aria-label="위로" ${i===0?'disabled':''}>${ICON.up}</button><button data-move="${esc(v.id)}" data-dir="1" aria-label="아래로" ${i===arr.length-1?'disabled':''}>${ICON.down}</button></div>`:'<span></span>'}
@@ -965,8 +980,8 @@ function paintRegionCounts(){
     const el=g.querySelector('.ncnt');if(el){el.hidden=!n;el.textContent=`NEW ${n}`}
   });
 }
-// '200 / ♡32' (하트가 없으면 숫자만)
-function cntText(l){const h=l.filter(v=>isHeart(v.id)).length;return `<span class="mono">${l.length}</span>`+(h?`<span class="slash">/</span>${stat('heart',h,'h')}`:'')}
+// '200 / ★32' (즐겨찾기가 없으면 숫자만)
+function cntText(l){const h=l.filter(v=>isHeart(v.id)).length;return `<span class="mono">${l.length}</span>`+(h?`<span class="slash">/</span>${stat('star',h,'s')}`:'')}
 function observeVenueRows(root){root.querySelectorAll('.vrow.isnew').forEach(li=>vIO.observe(li))}
 function statusText(s){const t=new Date(s.updatedAt);return `갱신 ${t.getMonth()+1}.${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())} · 공간 ${s.venues} · 전시 ${s.exhibitions}`}
 const venueById=id=>(allVenues||[]).find(v=>v.id===id)||(S.prefs[id]&&S.prefs[id].v)||null;
@@ -1087,13 +1102,15 @@ function updateTop(){
   const vl=Object.values(S.visited).filter(r=>r&&r.e);
   const liveStars=S.stars.filter(s=>D(s.e.end)>=today&&!S.visited[keyOf(s.e)]&&!vl.some(r=>sameEx(s.e,s.v||{},r.e,r.v||{}))).length;
   const b=$('#mybadge');b.hidden=!liveStars;b.textContent=liveStars;
-  if(tab==='near')c.innerHTML=`<button data-goto="settings">${ICON.pin}${esc(origin().name)}</button>`;
-  else if(tab==='heart')c.innerHTML=stat('heart',heartInfo.venues,'h')+stat('frame',heartInfo.count);
-  else if(tab==='my')c.innerHTML=stat('star',S.stars.length,'s')+stat('visit',Object.keys(S.visited).length,'v');
+  const sb=`<button class="ctxsearch${srch.open?' on':''}" data-act="search" aria-label="검색">${ICON.search}</button>`;
+  if(tab==='near')c.innerHTML=sb+`<button data-goto="settings">${ICON.pin}${esc(origin().name)}</button>`;
+  else if(tab==='heart')c.innerHTML=sb+stat('star',heartInfo.venues,'s')+stat('frame',heartInfo.count);
+  else if(tab==='my')c.innerHTML=sb+stat('heart',S.stars.length,'h')+stat('visit',Object.keys(S.visited).length,'v');
   else c.innerHTML='';
 }
 function show(t){
   if(!['near','heart','my','settings'].includes(t))t='near';
+  if(srch.open&&t!==tab)closeSearch(true);
   tab=t;
   document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+t);
   document.querySelectorAll('.nav button').forEach(b=>{if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
@@ -1113,7 +1130,7 @@ function toggleStar(id){
   if(on){if(!rec)return;S.stars.push({e:rec.e,v:rec.v})}else S.stars.splice(S.stars.indexOf(cur),1);
   save();
   document.querySelectorAll(`[data-star="${CSS.escape(id)}"]`).forEach(b=>b.setAttribute('aria-pressed',on));
-  toast(on?'MY에 담았어요':'MY에서 뺐어요');updateTop();
+  toast(on?'보고 싶은 전시에 담았어요':'보고 싶은 전시에서 뺐어요');updateTop();
 }
 function paintVisit(key){
   const on=!!S.visited[key];
@@ -1140,6 +1157,48 @@ function openVisitDialog(key){
   $('#visitdlg').hidden=false;
 }
 function closeVisitDialog(){$('#visitdlg').hidden=true;dlgKey=null}
+
+/* ---------- 검색: 근처는 서버 전체에서, 즐겨찾기·MY는 지금 탭의 전시 안에서 ----------
+   검색바가 위에서 내려오고 카드가 그만큼 내려감. 결과는 탭 맨 위에 따로 보여 주고, 닫으면 원래 목록·위치 그대로 */
+const srch={open:false,t:null,seq:0};
+const nq=s=>String(s||'').toLowerCase().replace(/\s+/g,'');
+function exHit(e,v,q){return [e.title,e.sub,e.artist,e.hall,v&&v.name,v&&v.addr,...(e.alt||[])].some(x=>nq(x).includes(q))}
+function openSearch(){
+  if(!['near','heart','my'].includes(tab))return;
+  srch.open=true;$('#sbar').hidden=false;$('#views').classList.add('searching');
+  const i=$('#sq');i.value='';i.focus();updateTop();
+}
+function closeSearch(silent){
+  srch.open=false;srch.seq++;clearTimeout(srch.t);
+  $('#sbar').hidden=true;$('#views').classList.remove('searching');
+  document.querySelectorAll('.view.searchmode').forEach(v=>{v.classList.remove('searchmode');v.querySelector('#sres')?.remove()});
+  const i=$('#sq');if(i){i.value='';i.blur()}
+  if(!silent)updateTop();
+}
+async function runSearch(raw){
+  const view=$('#view-'+tab);if(!view)return;
+  const q=nq(raw),seq=++srch.seq;
+  let box=view.querySelector('#sres');
+  if(!q){box?.remove();view.classList.remove('searchmode');return}
+  if(!box){box=document.createElement('div');box.id='sres';view.prepend(box)}
+  view.classList.add('searchmode');view.scrollTop=0;
+  let html='';
+  if(tab==='near'){
+    box.innerHTML='<div class="loader"><span><span class="dots"><i></i><i></i><i></i></span></span></div>';
+    let r;try{r=await api('/api/find?q='+encodeURIComponent(raw.trim())+`&lat=${origin().lat}&lng=${origin().lng}`)}catch(e){if(seq===srch.seq)box.innerHTML=`<div class="sempty">${esc(e.message)}</div>`;return}
+    if(seq!==srch.seq)return;
+    html=venueCards(r.venues||[],0,false);
+  }else if(tab==='heart'){
+    (heartData||[]).forEach(v=>v.ex.forEach((e,j)=>{if(exHit(e,v,q)){remember(e,v);html+=cardHTML(e,v,{idx:j+1,total:v.ex.length})}}));
+  }else if(tab==='my'){
+    const seen=new Set();
+    [...S.stars,...Object.values(S.visited).filter(r=>r&&r.e)].forEach(r=>{if(seen.has(r.e.id)||!exHit(r.e,r.v,q))return;seen.add(r.e.id);remember(r.e,r.v);html+=cardHTML(r.e,r.v)});
+  }
+  box.innerHTML=html||'<div class="sempty">결과 없음</div>';
+  observePosters(box);
+}
+document.addEventListener('input',ev=>{if(ev.target.id!=='sq')return;clearTimeout(srch.t);const v=ev.target.value;srch.t=setTimeout(()=>runSearch(v),tab==='near'?300:120)});
+document.addEventListener('submit',ev=>{if(ev.target.id!=='sbar')return;ev.preventDefault();clearTimeout(srch.t);runSearch($('#sq').value);$('#sq').blur()});
 
 /* ---------- 지도: 기준 위치 → 전시장 ----------
    카카오 JavaScript 키(KAKAO_JS_KEY)가 있으면 카카오 지도, 없거나 실패하면 오픈스트리트맵(키 필요 없음) */
@@ -1264,7 +1323,7 @@ function toggleHeart(id){
   const v=findVenue(id);if(!v)return;
   const s=setPref(v,{heart:!isHeart(id)});s.name=v.name;
   document.querySelectorAll(`[data-heart="${CSS.escape(id)}"]`).forEach(b=>b.setAttribute('aria-pressed',s.heart));
-  toast(`${v.name} · ${s.heart?'하트 공간으로 표시':'하트 해제'}`);updateTop();refreshHeartBadge();
+  toast(`${v.name} · ${s.heart?'즐겨찾기에 추가':'즐겨찾기 해제'}`);updateTop();refreshHeartBadge();
   if(tab==='settings')paintCounts();
 }
 // 설정 목록의 개수만 다시 씀 (목록은 그대로)
@@ -1318,6 +1377,8 @@ document.addEventListener('click',ev=>{
   const d=t.dataset;
   if(d.tab){show(d.tab);return}
   if(d.map){openMap(d.map);return}
+  if(d.act==='search'){srch.open?closeSearch():openSearch();return}
+  if(d.act==='search-close'){closeSearch();return}
   if(d.act==='map-close'){closeMap();return}
   if(d.goto){show(d.goto);const v=$('#view-'+d.goto);if(v)v.scrollTop=0;return}
   if(d.star){toggleStar(d.star);return}
@@ -1517,8 +1578,8 @@ function paintRestore(){
   if(!pendingRestore){box.innerHTML='';return}
   const r=countsOf(pendingRestore.data),l=countsOf(S);
   box.innerHTML=`<div class="restorebox">
-    <p><b>${pendingRestore.savedAt?fmtWhen(pendingRestore.savedAt):'백업'}</b> <span class="mono">★${r.stars} · 관람 ${r.visited} · ♡${r.hearts}</span></p>
-    <p class="note" style="margin:0">이 기기 <span class="mono">★${l.stars} · 관람 ${l.visited} · ♡${l.hearts}</span></p>
+    <p><b>${pendingRestore.savedAt?fmtWhen(pendingRestore.savedAt):'백업'}</b> <span class="mono">♥${r.stars} · 관람 ${r.visited} · ★${r.hearts}</span></p>
+    <p class="note" style="margin:0">이 기기 <span class="mono">♥${l.stars} · 관람 ${l.visited} · ★${l.hearts}</span></p>
     <div class="syncrow"><button class="btn sm" data-act="restore-merge">합치기</button><button class="btn ghost sm" data-act="restore-replace">바꾸기</button><button class="btn ghost sm" data-act="restore-cancel">취소</button></div>
   </div>`;
 }
@@ -1581,7 +1642,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.49';
+const APP_VER='2026-10-03.50';
 api('/api/status').then(st=>{
   statusCache=st;
   if(st.version&&st.version!==APP_VER){
