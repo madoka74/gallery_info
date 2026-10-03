@@ -1,0 +1,15 @@
+# 클라우드플레어 자체 빌드가 멈출 때를 위한 예비 배포 경로
+# GitHub → Actions 탭 → "Deploy (backup)" → Run workflow 를 누르면 바로 배포됨 (자동 실행은 하지 않음)
+name: Deploy (backup)
+on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
