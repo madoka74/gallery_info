@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.49';
+const VERSION = '2026-10-03.50';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -308,6 +308,20 @@ async function route(url, req, env, ctx) {
     return json({ venues, missing: ids.filter(id => !map.has(id)) });
   }
 
+  if (p === '/api/find') {
+    // 전시 검색: 제목·부제·작가·다른 표기·공간 이름·주소. 공간 이름이 맞으면 그 공간 전시 전부
+    const term = norm(String(q('q') || ''));
+    if (!term) return json({ venues: [] });
+    const hit = s => norm(s).includes(term);
+    const venues = ds.venues.map(v => {
+      const w = withActive(v, today, lat, lng);
+      const venueHit = hit(v.name) || hit(v.addr);
+      w.ex = venueHit ? w.ex : w.ex.filter(e => hit(e.title) || hit(e.sub) || hit(e.artist) || hit(e.hall) || (e.alt || []).some(hit));
+      return w;
+    }).filter(v => v.ex.length).sort((a, b) => a.distance - b.distance).slice(0, 40);
+    return json({ venues });
+  }
+
   if (p === '/api/search') {
     const term = norm(String(q('q') || ''));
     if (!term) return json({ venues: [] });
@@ -464,16 +478,18 @@ async function assignVenueIds(env, venues, stats) {
 async function fillSourceCoords(env) {
   const coords = (await env.CACHE.get(COORDS_KEY, 'json')) || {};
   const list = await loadSources(env);
-  const need = list.filter(s => !(Number.isFinite(s.lat) && Number.isFinite(s.lng)) && s.addr && !(coords[s.id] && coords[s.id].addr === s.addr && coords[s.id].failedAt && Date.now() - coords[s.id].failedAt < 86400e3));
+  // geo: 주소를 모를 때 좌표를 찾을 검색어(예: '그라운드시소 센트럴')
+  const keyOf = s => s.addr || s.geo;
+  const need = list.filter(s => !(Number.isFinite(s.lat) && Number.isFinite(s.lng)) && keyOf(s) && !(coords[s.id] && coords[s.id].addr === keyOf(s) && coords[s.id].failedAt && Date.now() - coords[s.id].failedAt < 86400e3));
   let done = 0, failed = [];
   for (const s of need.slice(0, 12)) {
     let hit = null;
-    for (const term of [s.addr, s.name]) {
+    for (const term of [s.geo, s.addr, s.name].filter(Boolean)) {
       const g = await geocode(env, term, 36.4, 127.8).catch(() => ({ places: [] }));
       if (g.places[0]) { hit = g.places[0]; break; }
     }
-    if (hit) { coords[s.id] = { addr: s.addr, lat: hit.lat, lng: hit.lng }; done++; }
-    else { coords[s.id] = { addr: s.addr, failedAt: Date.now() }; failed.push(s.id); }
+    if (hit) { coords[s.id] = { addr: keyOf(s), lat: hit.lat, lng: hit.lng, raddr: hit.addr || '' }; done++; }
+    else { coords[s.id] = { addr: keyOf(s), failedAt: Date.now() }; failed.push(s.id); }
   }
   if (need.length) await env.CACHE.put(COORDS_KEY, JSON.stringify(coords));
   return { need: need.length, done, failed };

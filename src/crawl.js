@@ -21,12 +21,18 @@ export async function loadSources(env) {
       st.list[i] = { ...seed, origin: 'seed' }; changed = true;
     }
   }
+  // sources.js에서 빠진 기본 공간(문 닫음·주소 만료 등)은 목록에서도 뺌 (직접 고친 건 남김)
+  const seedIds = new Set(SEED.map(x => x.id));
+  const before = st.list.length;
+  st.list = st.list.filter(x => !(x.origin === 'seed' && !x.edited && !seedIds.has(x.id)));
+  if (st.list.length !== before) changed = true;
   st.seeded = true;
   if (changed) await env.CACHE.put(SOURCES_KEY, JSON.stringify(st));
   // 좌표 없이 주소만 적은 공간(지방 등)은 주소로 계산해 둔 좌표를 씀 (index.js fillSourceCoords)
   const coords = (await env.CACHE.get(COORDS_KEY, 'json')) || {};
   return st.list.map(s => Number.isFinite(s.lat) && Number.isFinite(s.lng) ? s
-    : coords[s.id] && coords[s.id].addr === s.addr ? { ...s, lat: coords[s.id].lat, lng: coords[s.id].lng } : s);
+    : coords[s.id] && coords[s.id].addr === (s.addr || s.geo) && Number.isFinite(coords[s.id].lat)
+      ? { ...s, lat: coords[s.id].lat, lng: coords[s.id].lng, addr: s.addr || coords[s.id].raddr || '' } : s);
 }
 export const COORDS_KEY = 'srccoords:v1';
 export async function saveSource(env, src) {
@@ -189,7 +195,11 @@ async function crawlOne(env, src, prev, force) {
   if (src.render && page.via === 'html' && page.renderError && page.text.length < 3000) throw new Error(page.renderError);
 
   const hash = await sha1(page.text);
-  if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items?.length) return { ...prev, url, srcUrl: src.url, via: page.via, changed: false };
+  if (!force && prev.hash === hash && prev.ver === EXTRACT_VER && prev.items?.length) {
+    // 페이지는 그대로여도 포스터가 비어 있던 전시는 한 번 채워 봄
+    const items = await fillPosters(env, prev.items.map(e => ({ ...e })));
+    return { ...prev, items, url, srcUrl: src.url, via: page.via, changed: false };
+  }
 
   let renderError = page.renderError || '';
   let r = await extract(env, src, page.text, url);
@@ -220,9 +230,34 @@ async function crawlOne(env, src, prev, force) {
   }
   // 같은 전시를 매번 조금씩 다르게 읽어도(제목 한두 글자) 앞서 쓰던 제목·id를 그대로 유지 → 전시가 바뀌거나 NEW로 다시 뜨지 않게
   items = stabilize(items, prev.items || [], page.text);
+  items = await fillPosters(env, items);
   // 렌더링 한도 때문에 못 찾은 거면 지난 결과를 지우지 않고 1시간 뒤 다시
   if (!items.length && /rate limit|2001|429/i.test(renderError)) throw new Error('브라우저 렌더링 실패(한도 초과): ' + renderError);
   return { url, srcUrl: src.url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError };
+}
+
+/* ---------- 포스터 보충: 목록에 그림이 없던 전시는 상세 페이지의 대표 이미지(og:image)를 씀 ----------
+   여러 전시가 같은 그림을 가리키면 사이트 공통 로고·배너로 보고 쓰지 않음. 한 번 시도한 전시는 다시 묻지 않음 */
+async function fillPosters(env, items, max = 6) {
+  const need = items.filter(e => !e.poster && e.link && !e.posterTried).slice(0, max);
+  if (!need.length) return items;
+  const found = new Map();
+  for (const e of need) {
+    e.posterTried = true;
+    try {
+      if (!(await robotsAllows(env, e.link))) continue;
+      const res = await fetch(e.link, { headers: { 'user-agent': UA, accept: 'text/html,*/*' }, redirect: 'follow' });
+      if (!res.ok) continue;
+      const html = (await readHtml(res)).slice(0, 300000);
+      const meta = k => (html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${k}["'][^>]*content=["']([^"']+)["']`, 'i')) || html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${k}["']`, 'i')) || [])[1];
+      let img = meta('og:image') || meta('og:image:url') || meta('twitter:image') || (html.match(/<link[^>]+rel=["']image_src["'][^>]*href=["']([^"']+)["']/i) || [])[1];
+      img = img ? abs(img.replace(/&amp;/g, '&'), res.url || e.link) : '';
+      if (img && !/logo|favicon|og[-_]?default|default[-_]?og/i.test(img)) found.set(e, img);
+    } catch {}
+  }
+  const counts = new Map(); [...found.values()].forEach(u => counts.set(u, (counts.get(u) || 0) + 1));
+  for (const [e, u] of found) if (counts.get(u) === 1 || found.size === 1) e.poster = u;
+  return items;
 }
 
 // 지난번 결과와 기간이 같고 제목이 거의 같으면 지난번 제목·id를 씀 (새로 읽은 쪽은 빈 칸만 채움)
@@ -240,7 +275,7 @@ export function stabilize(items, prevItems, pageText = '') {
     if (!o) return n;
     used.add(o.id);
     const title = onPage(n.title) && !onPage(o.title) ? n.title : o.title;
-    return { ...n, id: o.id, title, sub: o.sub || n.sub, artist: o.artist || n.artist,
+    return { ...n, id: o.id, title, posterTried: o.posterTried || n.posterTried, sub: o.sub || n.sub, artist: o.artist || n.artist,
       poster: o.poster || n.poster, link: o.link || n.link, fee: n.fee || o.fee, hall: n.hall || o.hall };
   });
 }
@@ -406,8 +441,11 @@ export function htmlToText(html, base) {
     .replace(/<(nav|header|footer|aside)\b[\s\S]*?<\/\1>/gi, ' ');
   // 배경 이미지로 쓰인 포스터
   h = h.replace(/<[^>]*style=["'][^"']*url\(\s*['"]?([^'")]+)['"]?\s*\)[^>]*>/gi, (tag, u) => `${tag} [IMG ${abs(u, base)}] `);
+  h = h.replace(/<source\b[^>]*>/gi, tag => { const u = pickSrcset((tag.match(/\s(?:data-srcset|srcset)=["']([^"']+)["']/i) || [])[1]); return u && /\.(jpe?g|png|webp|avif)|image/i.test(u) ? ` [IMG ${abs(u, base)}] ` : ' '; });
   h = h.replace(/<img\b[^>]*>/gi, tag => {
-    const src = (tag.match(/\s(?:data-src|data-original|data-lazy-src|src)=["']([^"']+)["']/i) || [])[1];
+    let src = (tag.match(/\s(?:data-src|data-original|data-lazy-src|src)=["']([^"']+)["']/i) || [])[1];
+    // src가 없거나 빈 그림이면 srcset(반응형 이미지)의 가장 큰 후보를 씀
+    if (!src || src.startsWith('data:')) src = pickSrcset((tag.match(/\s(?:data-srcset|srcset)=["']([^"']+)["']/i) || [])[1]) || src;
     const alt = (tag.match(/\salt=["']([^"']*)["']/i) || [])[1] || '';
     return src && !src.startsWith('data:') ? ` [IMG ${alt} ${abs(src, base)}] ` : ' ';
   });
@@ -429,6 +467,12 @@ export function htmlToText(html, base) {
     out.push(lines[i]); i++;
   }
   return out.join('\n').slice(0, MAX_TEXT);
+}
+function pickSrcset(ss) {
+  if (!ss) return '';
+  const c = ss.split(',').map(x => x.trim().split(/\s+/)).filter(x => x[0] && !x[0].startsWith('data:'));
+  c.sort((a, b) => (parseFloat(b[1]) || 0) - (parseFloat(a[1]) || 0));
+  return c[0] ? c[0][0] : '';
 }
 function abs(u, base) { try { return new URL(String(u).replace(/&amp;/g, '&').trim(), base).href; } catch { return ''; } }
 

@@ -27,14 +27,17 @@ export const SOURCES = [
   { id: 'ilmin', name: '일민미술관', addr: '종로구 세종대로 152', lat: 37.5703, lng: 126.9771, home: 'https://ilmin.org', url: 'https://ilmin.org', aliases: ['일민미술관 ILMIN'] },
   { id: 'sungkok', name: '성곡미술관', addr: '종로구 경희궁1가길 42', lat: 37.5713, lng: 126.9688, home: 'http://www.sungkokmuseum.org', url: 'http://www.sungkokmuseum.org' },
   { id: 'songeun', name: '송은', addr: '강남구 도산대로 441', lat: 37.5245, lng: 127.0461, home: 'https://songeun.or.kr', url: 'https://songeun.or.kr' },
-  { id: 'platforml', name: '플랫폼엘', addr: '강남구 언주로133길 11', lat: 37.5163, lng: 127.0352, home: 'https://www.platform-l.org', url: 'https://www.platform-l.org' },
+  { id: 'platforml', name: '플랫폼엘', addr: '강남구 언주로133길 11', lat: 37.5163, lng: 127.0352, home: 'https://www.platform-l.org', url: 'https://www.platform-l.org/exhibition/list?category=1' },
   { id: 'spacec', name: '코리아나미술관 스페이스씨', addr: '강남구 언주로 827', lat: 37.5236, lng: 127.0326, home: 'http://www.spacec.co.kr', url: 'http://www.spacec.co.kr', aliases: ['스페이스씨','코리아나미술관','스페이스 씨'] },
   { id: 'posco', name: '포스코미술관', addr: '강남구 테헤란로 440', lat: 37.5059, lng: 127.0557, home: 'https://www.poscoartmuseum.org', url: 'https://www.poscoartmuseum.org', aliases: ['포스코 미술관','POSCO Art Museum'] },
   { id: 'lotte', name: '롯데뮤지엄', addr: '송파구 올림픽로 300 롯데월드타워 7층', lat: 37.5126, lng: 127.1025, home: 'https://www.lottemuseum.com', url: 'https://www.lottemuseum.com', aliases: ['롯데뮤지엄 LOTTE MUSEUM OF ART','롯데월드타워 롯데뮤지엄'] },
   { id: 'mamuone', name: '마이아트뮤지엄 원그로브', addr: '강서구 공항대로 165 원그로브 C동 2층', lat: 37.5606, lng: 126.8310, home: 'https://www.mamuone.com', url: 'https://www.mamuone.com/7', aliases: ['마이아트뮤지엄','마이아트 뮤지엄'] },
   { id: 'horim', name: '호림박물관 신사분관', addr: '강남구 도산대로 317', lat: 37.5223, lng: 127.0365, home: 'http://www.horimmuseum.org', url: 'http://www.horimmuseum.org', branch: '신사분관' },
-  { id: 'kmca', name: 'K현대미술관', addr: '강남구 선릉로 807', lat: 37.5256, lng: 127.0400, home: 'http://www.kmcaseoul.org', url: 'http://www.kmcaseoul.org', aliases: ['KMCA'] },
-  { id: 'groundseesaw', name: '그라운드시소 성수', addr: '성동구 아차산로 19', lat: 37.5440, lng: 127.0560, home: 'https://groundseesaw.co.kr', url: 'https://groundseesaw.co.kr', branch: '성수점', aliases: ['그라운드시소'] },
+  { id: 'kmca', name: 'K현대미술관', addr: '강남구 선릉로 807', lat: 37.5256, lng: 127.0400, home: 'http://www.kmcaseoul.org', url: 'https://www.kmcaseoul.org/exhibition', aliases: ['KMCA'] },
+  // 그라운드시소: 한 목록(Now)에 지점 전시가 섞여 있음 → 지점별로 나눠 읽음. 성수는 현재 운영 흔적이 없어 뺌
+  { id: 'gs-central', name: '그라운드시소 센트럴', geo: '그라운드시소 센트럴', home: 'https://groundseesaw.co.kr', url: 'https://groundseesaw.co.kr/product/list.html?cate_no=47', branch: '센트럴 지점만', aliases: ['그라운드시소센트럴'] },
+  { id: 'gs-east', name: '그라운드시소 이스트', addr: '서울 광진구 아차산로 402', home: 'https://groundseesaw.co.kr', url: 'https://groundseesaw.co.kr/product/list.html?cate_no=47', branch: '이스트 지점만', aliases: ['그라운드시소이스트'] },
+  { id: 'gs-hannam', name: '그라운드시소 한남', geo: '그라운드시소 한남', home: 'https://groundseesaw.co.kr', url: 'https://groundseesaw.co.kr/product/list.html?cate_no=47', branch: '한남 지점만', aliases: ['그라운드시소한남'] },
   { id: 'piknic', name: '피크닉', addr: '중구 퇴계로6가길 30', lat: 37.5555, lng: 126.9790, home: 'https://piknic.kr', url: 'https://piknic.kr', aliases: ['piknic'] },
   { id: 'spacek', name: '스페이스K 서울', addr: '강서구 마곡중앙8로 32', lat: 37.5613, lng: 126.8270, home: 'https://spacek.co.kr', url: 'https://spacek.co.kr', branch: '서울' },
 
@@ -54,15 +57,13 @@ export const SOURCES = [
   { id: 'lehmann', name: '리만머핀 서울', addr: '용산구 이태원로 213', lat: 37.5367, lng: 126.9960, home: 'https://www.lehmannmaupin.com', url: 'https://www.lehmannmaupin.com/exhibitions', branch: 'Seoul' },
   { id: 'baton', name: '갤러리바톤', addr: '용산구 독서당로 116', lat: 37.5369, lng: 127.0070, home: 'https://www.gallerybaton.com', url: 'https://www.gallerybaton.com' },
   { id: 'johyun', name: '조현화랑 서울', addr: '용산구 한남동', lat: 37.5340, lng: 127.0050, home: 'https://johyungallery.com', url: 'https://johyungallery.com', branch: '서울 (부산 제외)' },
-  { id: 'parkryusook', name: '박여숙화랑', addr: '용산구 이태원동', lat: 37.5410, lng: 127.0005, home: 'https://www.parkryusookgallery.com', url: 'https://www.parkryusookgallery.com' },
 
   // ---- 갤러리: 청담·신사·성수 ----
   { id: 'perrotin', name: '페로탕 서울', addr: '강남구 도산대로45길 10', lat: 37.5241, lng: 127.0379, home: 'https://www.perrotin.com', url: 'https://www.perrotin.com/exhibitions/current/seoul/5', branch: 'Seoul', aliases: ['Perrotin','페로탕'] },
-  { id: 'whitecube', name: '화이트큐브 서울', addr: '강남구 도산대로45길 6', lat: 37.5243, lng: 127.0386, home: 'https://www.whitecube.com', url: 'https://www.whitecube.com/gallery-exhibitions', branch: 'Seoul', aliases: ['White Cube','화이트큐브'] },
-  { id: 'koenig', name: '쾨닉 서울', addr: '강남구 압구정로 412', lat: 37.5253, lng: 127.0451, home: 'https://www.koeniggalerie.com', url: 'https://www.koeniggalerie.com', branch: 'Seoul' },
-  { id: 'gladstone', name: '글래드스톤 서울', addr: '강남구 청담동', lat: 37.5249, lng: 127.0495, home: 'https://www.gladstonegallery.com', url: 'https://www.gladstonegallery.com/exhibitions', branch: 'Seoul' },
+  { id: 'whitecube', name: '화이트큐브 서울', addr: '강남구 도산대로45길 6', lat: 37.5243, lng: 127.0386, home: 'https://www.whitecube.com', url: 'https://www.whitecube.com/exhibitions/seoul', aliases: ['White Cube','화이트큐브'] },
+  { id: 'gladstone', name: '글래드스톤 서울', addr: '서울 용산구 한남동 739-28', home: 'https://gladstonegallery.com', url: 'https://gladstonegallery.com/exhibitions/', branch: 'Seoul', render: true, aliases: ['Gladstone Seoul','글래드스톤'] },
   { id: 'tang', name: '탕 컨템포러리 아트 서울', addr: '강남구 청담동', lat: 37.5248, lng: 127.0440, home: 'https://www.tangcontemporary.com', url: 'https://www.tangcontemporary.com', branch: 'Seoul' },
-  { id: 'yehwa', name: '예화랑', addr: '강남구 신사동', lat: 37.5245, lng: 127.0400, home: 'https://www.galleryyeh.com', url: 'https://www.galleryyeh.com' },
+  { id: 'yehwa', name: '예화랑', addr: '강남구 신사동', lat: 37.5245, lng: 127.0400, home: 'https://www.galleryyeh.com', url: 'https://www.galleryyeh.com/exhibition' },
   { id: 'thepage', name: '더페이지갤러리', addr: '성동구 성수동', lat: 37.5446, lng: 127.0560, home: 'https://thepagegallery.com', url: 'https://thepagegallery.com' },
 
   /* ---------- 서울·수도권 밖 (좌표는 주소로 자동 계산) ---------- */
