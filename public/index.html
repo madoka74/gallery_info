@@ -328,9 +328,9 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
 .walkt{display:inline-flex;align-items:center;gap:3px;color:var(--fg);font-weight:600}
 .walkt svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .ctxsearch{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:var(--muted);flex:none}
-.ctx .ctxsearch{padding:0;border:0;background:transparent}
+.ctx .ctxsearch{display:grid;place-items:center;padding:0;border:0;background:transparent;-webkit-tap-highlight-color:transparent}
 .ctxsearch svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-.ctxsearch.on{color:var(--accent);background:var(--soft)!important}
+.ctxsearch.on{color:var(--accent)}
 .views .view{transition:top .22s ease}
 .views.searching .view{top:56px}
 .sbar{position:absolute;left:0;right:0;top:0;height:48px;display:flex;align-items:center;gap:8px;z-index:3;animation:sdown .22s ease}
@@ -605,7 +605,7 @@ const ICON={
   x:'<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>',
   visit:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.3l2.6 2.6 5-5.4"/></svg>',
   pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
-  search:'<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>',
+  search:'<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg>',
   walk:'<svg viewBox="0 0 24 24"><circle cx="13" cy="4.5" r="1.8"/><path d="M10.5 21l2-6 2.5 2.5V21M8 12.5l2.5-4.5 3 1 2 3 2.5 1M12.5 9.5l-1.5 5.5"/></svg>',
   frame:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="1.5"/><path d="M8.5 15.5l2.6-3 2 2.2 1.6-1.7 1.8 2.5"/></svg>'
 };
@@ -1642,14 +1642,22 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.51';
-api('/api/status').then(st=>{
-  statusCache=st;
-  if(st.version&&st.version!==APP_VER){
-    let k='gj-reload-'+st.version,done=false;try{done=!!sessionStorage.getItem(k);sessionStorage.setItem(k,'1')}catch(e){done=true}
-    if(!done)location.replace(location.pathname+'?v='+encodeURIComponent(st.version)+location.hash);
-  }
-}).catch(()=>{});
+const APP_VER='2026-10-03.53';
+let verAt=0;
+function checkVer(){
+  verAt=Date.now();
+  return api('/api/status').then(st=>{
+    statusCache=st;
+    if(st.version&&st.version!==APP_VER){
+      let k='gj-reload-'+st.version,done=false;try{done=!!sessionStorage.getItem(k);sessionStorage.setItem(k,'1')}catch(e){done=true}
+      if(!done)location.replace(location.pathname+'?v='+encodeURIComponent(st.version)+location.hash);
+    }
+  }).catch(()=>{});
+}
+checkVer();
+// 홈 화면 앱은 껐다 켜도 실제로는 이어서 열리는 경우가 많아서, 다시 앞으로 올 때마다 새 버전 확인(1분 간격)
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-verAt>60000)checkVer()});
+window.addEventListener('pageshow',e=>{if(e.persisted&&Date.now()-verAt>60000)checkVer()});
 setTimeout(refreshHeartBadge,1500);
 setTimeout(()=>loadAll().then(updateSetBadge).catch(()=>{}),1800);
 })();
