@@ -146,6 +146,9 @@ input[type=date].field{min-height:44px;-webkit-appearance:none;appearance:none}
 .dchip.closing{background:var(--warn);color:var(--surface)}
 .dchip.soon{border:1px dashed var(--muted);background:var(--surface)}
 .dchip.ended{color:var(--muted)}
+.dchip.alert{background:var(--warn);color:var(--surface);animation:dblink 1.4s ease-in-out infinite}
+@keyframes dblink{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dchip.alert{animation:none}}
 .card.is-ended{opacity:.6}
 .frame{position:relative}
 .newtag{position:absolute;top:-11px;left:-11px;z-index:2;padding:6px 11px;border-radius:7px;background:#FF2D55;color:#fff;font-family:var(--f-mono);font-size:14px;font-weight:700;letter-spacing:.1em;line-height:1;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.35);animation:newpulse 1.3s ease-in-out infinite}
@@ -445,7 +448,117 @@ const localYmd=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padS
 Object.values(S.visited).forEach(r=>{if(r.at&&r.at.length>10)r.at=localYmd(new Date(r.at))});
 // 별표 전시는 끝나면 자동으로 빠짐 (관람 기록은 남음)
 S.stars=S.stars.filter(s=>s.e&&s.e.end>=localYmd());
-const save = () => { try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} syncSoon(); };
+const save = () => { try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} syncSoon(); pushSoon(); };
+// 마감 알림 설정은 기기마다 따로 (백업·복원에 섞이지 않게 별도 저장)
+//  on: 켜짐 · ep: 서버에 등록한 구독 주소 · key: 그때의 서버 키 · sig/at: 마지막으로 보낸 목록과 시각
+var AL=(()=>{try{const a=JSON.parse(localStorage.getItem('gakkaun-alert'));return a&&typeof a==='object'?a:{}}catch(e){return {}}})();
+function saveAL(){try{localStorage.setItem('gakkaun-alert',JSON.stringify(AL))}catch(e){}}
+/* ---------- 마감 알림: 보고 싶은 전시(하트)가 끝나기 2주 전부터 D-칩 깜빡임 + 매일 아침 알림 ----------
+   켜고 끄는 것만 있음. 하트·관람 기록이 바뀌면 목록을 서버에 다시 보내고(같으면 안 보냄),
+   서버가 매일 오전 10시에 2주 안으로 들어온 전시를 모아 알림 (같은 마감일로는 한 번만, 연장되면 다시) */
+function alertLimit(){return 14}
+function liveVisited(e,v){if(S.visited[keyOf(e)])return true;return Object.values(S.visited).some(r=>r&&r.e&&sameEx(e,v||{},r.e,r.v||{}))}
+function alertDue(e,v){
+  if(!AL.on||!e||!e.end)return false;
+  const n=days(today,D(e.end));
+  if(n<0||n>alertLimit())return false;
+  return !!starOf(e,v||{})&&!liveVisited(e,v);
+}
+function paintAlerts(){
+  document.querySelectorAll('.card[data-ex]').forEach(c=>{
+    const rec=EX.get(c.dataset.ex),chip=c.querySelector('.dchip');
+    if(rec&&chip)chip.classList.toggle('alert',alertDue(rec.e,rec.v));
+  });
+}
+function pushOK(){return 'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window}
+// 서버로 보낼 목록: 아직 안 끝났고 안 본, 하트한 전시
+function alertItems(){
+  const t=localYmd(),seen=new Set(),out=[];
+  S.stars.forEach(s=>{
+    if(!s||!s.e||!s.e.id||!s.e.end||s.e.end<t||seen.has(s.e.id)||liveVisited(s.e,s.v))return;
+    seen.add(s.e.id);out.push({id:s.e.id,t:s.e.title||'',n:(s.v&&s.v.name)||'',end:s.e.end});
+  });
+  return out.sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+}
+const unb64u=x=>{x=String(x).replace(/-/g,'+').replace(/_/g,'/');x+='='.repeat((4-x.length%4)%4);return Uint8Array.from(atob(x),c=>c.charCodeAt(0))};
+var swP=null;
+function swReg(){if(!swP)swP=navigator.serviceWorker.register('/sw.js').then(()=>navigator.serviceWorker.ready).catch(e=>{swP=null;throw e});return swP}
+// 켜기·끄기·목록 보내기를 한 줄로 세워서 차례로 처리 (빠르게 껐다 켜도 순서가 뒤엉키지 않게)
+var alQ=Promise.resolve(),pushT=null;
+function alQueue(fn){alQ=alQ.then(fn).catch(e=>{AL.err=(e&&e.message)||'오류';saveAL();paintAlertStat()});return alQ}
+function pushSoon(){if(!AL.on)return;clearTimeout(pushT);pushT=setTimeout(()=>alQueue(()=>pushSyncNow(false)),2500)}
+async function pushSyncNow(force,welcome,retry){
+  if(!AL.on||!pushOK()||Notification.permission!=='granted')return;
+  const reg=await swReg();
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub){
+    const {key}=await api('/api/push/key');
+    sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:unb64u(key)});
+    AL.key=key;saveAL();
+  }
+  if(!AL.on)return;
+  const items=alertItems(),sig=JSON.stringify([sub.endpoint,items]);
+  if(welcome&&Date.now()-(AL.welcomed||0)<15000)welcome=false;   // 빠르게 껐다 켰을 때 확인 알림 두 번 방지
+  if(!force&&!welcome&&sig===AL.sig&&Date.now()-(AL.at||0)<3*864e5)return;
+  const old=AL.ep&&AL.ep!==sub.endpoint?AL.ep:'';
+  const r=await api('/api/push/save',{sub:sub.toJSON(),items,old,welcome:!!welcome});
+  if(welcome)AL.welcomed=Date.now();
+  if(!AL.on){await api('/api/push/delete',{endpoint:sub.endpoint}).catch(()=>{});return}   // 보내는 사이 껐으면 바로 지움
+  if(r.key&&AL.key&&r.key!==AL.key&&!retry){
+    // 서버 키가 바뀌었으면(서버 기록 초기화 등) 구독을 새로 만들어 다시 등록
+    AL.ep=sub.endpoint;AL.key='';AL.sig='';saveAL();
+    await sub.unsubscribe().catch(()=>{});
+    return pushSyncNow(true,welcome,true);
+  }
+  AL.key=r.key||AL.key;AL.ep=sub.endpoint;AL.sig=sig;AL.at=Date.now();
+  AL.err=String(r.sent||'').startsWith('fail')?'보내기 실패':'';saveAL();paintAlertStat();
+}
+async function pushOffNow(){
+  if(AL.on)return;
+  let ep=AL.ep;
+  if(pushOK()){
+    try{const reg=await navigator.serviceWorker.getRegistration('/');const sub=reg&&await reg.pushManager.getSubscription();if(sub){ep=sub.endpoint;await sub.unsubscribe().catch(()=>{})}}catch(e){}
+  }
+  if(ep)await api('/api/push/delete',{endpoint:ep});   // 실패하면 AL.ep가 남아 다음에 다시 시도
+  if(AL.on)return;
+  AL.ep='';AL.sig='';AL.key='';AL.err='';saveAL();
+}
+function renderAlert(){
+  const el=$('#alertsec');if(!el)return;
+  el.innerHTML=`<div class="synchead"><h3>마감 알림</h3><span class="syncstat" id="alertstat"></span>
+    <label class="switch"><input type="checkbox" id="alerton" ${AL.on?'checked':''}><span class="track"></span><span class="sr">마감 알림</span></label></div>`;
+  paintAlertStat();
+}
+function paintAlertStat(){
+  const el=$('#alertstat');if(!el)return;
+  let t='2주 전';
+  if(AL.on){
+    if(!pushOK())t='홈 화면 앱에서만 알림';
+    else if(Notification.permission==='denied')t='알림 권한 꺼짐';
+    else if(AL.err)t='연결 실패';
+  }
+  el.textContent=t;
+}
+document.addEventListener('change',ev=>{
+  if(ev.target.id!=='alerton')return;
+  AL.on=ev.target.checked;AL.err='';saveAL();paintAlerts();
+  if(AL.on){
+    toast('마감 알림 켬');
+    if(pushOK()){
+      const go=()=>alQueue(()=>pushSyncNow(true,true));
+      // 권한 요청은 스위치를 누른 그 순간에 바로 (iOS는 터치 직후가 아니면 거절)
+      if(Notification.permission==='default')Notification.requestPermission().then(p=>{if(p==='granted'&&AL.on)go();paintAlertStat()}).catch(()=>paintAlertStat());
+      else if(Notification.permission==='granted')go();
+    }
+  }else{toast('마감 알림 끔');alQueue(pushOffNow)}
+  paintAlertStat();
+});
+function alertBoot(){
+  if(!pushOK())return;
+  navigator.serviceWorker.addEventListener('message',ev=>{const d=ev.data||{};if(d.type==='open'&&d.hash)show(d.hash.slice(1))});
+  if(AL.on&&Notification.permission==='granted')setTimeout(()=>alQueue(()=>pushSyncNow(false)),3000);
+  else if(!AL.on&&AL.ep)setTimeout(()=>alQueue(pushOffNow),3000);
+}
 
 /* ---------- 도우미 ---------- */
 const $=(s,r=document)=>r.querySelector(s);
@@ -757,7 +870,7 @@ function cardHTML(e,v,meta={}){
       <div class="frame"><img alt="${esc(e.title)} 포스터" data-poster="${esc(e.id)}">${fresh?'<span class="newtag">NEW</span>':''}${visited?stampHTML(key):''}</div>
       <div class="ovl">
         <span class="chip mono">${meta.rank?`<b>${pad(meta.rank)}</b><i class="sep"></i>`:''}${fmtDist(d)}</span>
-        <div class="ovl-r"><span class="dchip ${st.kind}">${st.dday}</span><button class="icon-btn" data-visit="${esc(e.id)}" aria-pressed="${visited}" aria-label="본 전시로 표시">${ICON.visit}</button><button class="icon-btn" data-star="${esc(e.id)}" aria-pressed="${starred}" aria-label="보고 싶은 전시">${ICON.heart}</button></div>
+        <div class="ovl-r"><span class="dchip ${st.kind}${alertDue(e,v)?' alert':''}">${st.dday}</span><button class="icon-btn" data-visit="${esc(e.id)}" aria-pressed="${visited}" aria-label="본 전시로 표시">${ICON.visit}</button><button class="icon-btn" data-star="${esc(e.id)}" aria-pressed="${starred}" aria-label="보고 싶은 전시">${ICON.heart}</button></div>
       </div>
     </div>
     <div class="info">
@@ -930,6 +1043,7 @@ function renderSettings(){
     <input class="field" id="vq" type="search" placeholder="찾기" autocomplete="off">
     <ul class="vlist" id="vlist"><li class="note">공간 목록을 불러오는 중…</li></ul>
   </section>
+  <section class="sec" id="alertsec"></section>
   <section class="sec" id="syncsec"></section>
   <section class="sec" id="adminsec"></section>
   <section class="sec">
@@ -940,7 +1054,7 @@ function renderSettings(){
     <div><button class="btn ghost danger" data-reset>내 설정 초기화</button></div>
   </section>`;
   loadAll().then(()=>{sessNew=new Set((allVenues||[]).filter(isNewV).map(v=>v.id));renderVList()}).catch(err=>{const b=$('#vlist');if(b)b.innerHTML=`<li class="note">${esc(err.message)}</li>`});
-  renderSync();renderAdmin();
+  renderAlert();renderSync();renderAdmin();
   if(!statusCache)api('/api/status').then(s=>{statusCache=s;const p=$('#dstatus');if(p)p.textContent=statusText(s)}).catch(err=>{const p=$('#dstatus');if(p)p.textContent='서버 상태를 확인하지 못했어요: '+err.message});
 }
 function renderVList(){
@@ -1131,7 +1245,7 @@ function toggleStar(id){
   if(on){if(!rec)return;S.stars.push({e:rec.e,v:rec.v})}else S.stars.splice(S.stars.indexOf(cur),1);
   save();
   document.querySelectorAll(`[data-star="${CSS.escape(id)}"]`).forEach(b=>b.setAttribute('aria-pressed',on));
-  toast(on?'보고 싶은 전시에 담았어요':'보고 싶은 전시에서 뺐어요');updateTop();
+  toast(on?'보고 싶은 전시에 담았어요':'보고 싶은 전시에서 뺐어요');updateTop();paintAlerts();
 }
 function paintVisit(key){
   const on=!!S.visited[key];
@@ -1141,7 +1255,7 @@ function paintVisit(key){
     c.querySelector('.stamp')?.remove();c.querySelector('.newtag')?.remove();
     if(on)c.querySelector('.frame').insertAdjacentHTML('beforeend',stampHTML(key));
   });
-  updateTop();updateHeartBadge();
+  updateTop();updateHeartBadge();paintAlerts();
 }
 function toggleVisit(id){
   const rec=EX.get(id);if(!rec)return;
@@ -1421,7 +1535,7 @@ document.addEventListener('click',ev=>{
     let j=i+Number(d.dir);while(j>=0&&j<S.order.length&&(!isOn(S.order[j])||regionOf(venueById(S.order[j])||{})!==rg))j+=Number(d.dir);
     if(j<0||j>=S.order.length)return;
     [S.order[i],S.order[j]]=[S.order[j],S.order[i]];save();renderVList();$(`[data-move="${CSS.escape(d.move)}"][data-dir="${d.dir}"]`)?.focus();return}
-  if(d.reset!==undefined){armed(t,'한 번 더 누르면 초기화',()=>{S=defaults();SY.code=newCode();SY.base=null;SY.last='';SY.at=null;saveSY();save();near.dirty=true;renderSettings();updateTop();toast('처음 상태로 되돌렸어요')});return}
+  if(d.reset!==undefined){armed(t,'한 번 더 누르면 초기화',()=>{S=defaults();SY.code=newCode();SY.base=null;SY.last='';SY.at=null;saveSY();AL.on=false;saveAL();alQueue(pushOffNow);save();near.dirty=true;renderSettings();updateTop();toast('처음 상태로 되돌렸어요')});return}
 });
 document.addEventListener('change',ev=>{
   const t=ev.target;if(!t.dataset||!t.dataset.on)return;
@@ -1642,8 +1756,9 @@ document.addEventListener('click',ev=>{
 
 save();
 show((location.hash||'').slice(1)||'near');
+alertBoot();
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.54';
+const APP_VER='2026-10-03.55';
 let verAt=0;
 function checkVer(){
   verAt=Date.now();
