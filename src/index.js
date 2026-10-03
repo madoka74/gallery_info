@@ -23,7 +23,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.50';
+const VERSION = '2026-10-03.51';
 const PAGE_VENUES = 10;
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
@@ -406,17 +406,23 @@ async function refreshApis(env) {
   // 한쪽 API가 실패하거나 갑자기 절반 넘게 줄면, 그쪽은 지난번에 받아 둔 전시를 그대로 씀
   // (일시적 장애 때문에 공간 수십 곳이 한꺼번에 사라지는 일이 없게)
   const prev = (await env.CACHE.get(API_KEY, 'json')) || { items: [] };
+  const held = { ...(prev.held || {}) };   // 지난 데이터를 붙잡아 두기 시작한 시각 (출처별)
   const items = [];
   results.forEach((r, i) => {
     const name = i ? 'seoul' : 'culture';
-    const old = prev.items.filter(it => it.src === name);
-    if (r.status === 'fulfilled' && !(old.length >= 20 && r.value.length < old.length * 0.5)) { items.push(...r.value); return; }
+    // 비교는 '아직 안 끝난' 지난 전시끼리 (끝난 전시까지 세면 자연스러운 감소도 이상하다고 오판함)
+    // 이상하다고 판단해도 지난 데이터가 하루 넘게 묵었으면 새 데이터를 받아들임
+    const today = kstToday();
+    const old = prev.items.filter(it => it.src === name && it.end >= today);
+    const stale = held[name] && Date.now() - held[name] > 86400e3;
+    if (r.status === 'fulfilled' && (stale || !(old.length >= 20 && r.value.length < old.length * 0.5))) { items.push(...r.value); delete held[name]; return; }
+    held[name] = held[name] || Date.now();
     if (r.status === 'fulfilled') stats[name + 'Suspicious'] = `${r.value.length}개 (지난번 ${old.length}개) → 지난번 데이터 유지`;
     else stats[name + 'Error'] = String(r.reason && r.reason.message || r.reason) + ` → 지난번 데이터 ${old.length}개 유지`;
     items.push(...old);
   });
   if (!items.length) throw new Error('두 API 모두 전시를 가져오지 못했습니다: ' + JSON.stringify(stats));
-  await env.CACHE.put(API_KEY, JSON.stringify({ at: new Date().toISOString(), items, stats }));
+  await env.CACHE.put(API_KEY, JSON.stringify({ at: new Date().toISOString(), items, stats, held }));
   return stats;
 }
 
