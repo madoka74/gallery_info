@@ -24,8 +24,9 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.55';
+const VERSION = '2026-10-03.56';
 const PAGE_VENUES = 10;
+const SUG_PREFIX = 'sug:';          // 공간 제안 (값은 비우고 이름·시각은 메타데이터에)
 const DATASET_KEY = 'dataset:v1';
 const API_KEY = 'api:v1';           // 공공 API 원본(정리 전) 보관
 const API_EVERY_MS = 6 * 3600e3;    // 공공 API는 6시간마다
@@ -130,6 +131,33 @@ async function route(url, req, env, ctx) {
     const stats = await rebuild(env);
     return json({ ok: true, rules: { merge: rules.merge.length, split: rules.split.length }, stats });
   }
+  if (p === '/api/admin/suggestions') {
+    // 지인들이 보낸 공간 제안: 이름이 같은 것끼리 묶고, 이미 있는 공간과 닮았으면 표시
+    const all = [];
+    let cursor;
+    do {
+      const page = await env.CACHE.list({ prefix: SUG_PREFIX, cursor });
+      for (const k of page.keys) if (k.metadata && k.metadata.name) all.push({ key: k.name, name: k.metadata.name, at: k.metadata.at || '' });
+      cursor = page.list_complete ? null : page.cursor;
+    } while (cursor);
+    const ds0 = await getDataset(env, ctx);
+    const norm = x => String(x || '').toLowerCase().replace(/[\s()·.,\-]/g, '');
+    const venueNames = ds0.venues.map(v => v.name);
+    const groups = new Map();
+    for (const x of all.sort((a, b) => b.at.localeCompare(a.at))) {
+      const k = norm(x.name);
+      if (!groups.has(k)) groups.set(k, { name: x.name, count: 0, last: x.at, keys: [] });
+      const g = groups.get(k); g.count++; g.keys.push(x.key);
+    }
+    const list = [...groups.entries()].map(([k, g]) => ({ ...g, exists: k.length >= 2 ? [...new Set(venueNames.filter(n => { const m = norm(n); return m.includes(k) || (m.length >= 2 && k.includes(m)); }))].slice(0, 3) : [] }))
+      .sort((a, b) => b.count - a.count || b.last.localeCompare(a.last));
+    return json({ total: all.length, list });
+  }
+  if (p === '/api/admin/suggestions/delete') {
+    const keys = (Array.isArray(body.keys) ? body.keys : []).map(String).filter(k => k.startsWith(SUG_PREFIX)).slice(0, 200);
+    await Promise.all(keys.map(k => env.CACHE.delete(k)));
+    return json({ ok: true, deleted: keys.length });
+  }
   if (p === '/api/admin/pushrun') {
     // 마감 알림을 지금 바로 한 번 돌려 봄 (이미 알린 전시는 다시 안 보냄)
     return json(await pushDaily(env, await getDataset(env, ctx), kstToday(), true));
@@ -186,6 +214,23 @@ async function route(url, req, env, ctx) {
     const savedAt = new Date().toISOString();
     await env.CACHE.put(key, JSON.stringify({ data, savedAt }), { expirationTtl: 400 * 86400 }); // 400일 동안 안 쓰면 지워짐
     return json({ ok: true, savedAt });
+  }
+
+  /* ---- 공간 제안: 지인들이 원하는 전시공간 이름을 보냄 (관리자 화면에서 모아 봄) ---- */
+  if (p === '/api/suggest') {
+    if (req.method !== 'POST') return json({ error: 'POST만 돼요' }, 405);
+    const name = String(body.name || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+    if (name.length < 2) return json({ error: '이름을 적어 주세요' }, 400);
+    // 같은 곳(접속 주소)에서 하루 20번까지
+    const ip = req.headers.get('cf-connecting-ip') || 'unknown';
+    const rk = 'sugrl:' + (await sha256hex(ip + '|' + kstToday())).slice(0, 32);
+    const n = parseInt((await env.CACHE.get(rk)) || '0', 10) || 0;
+    if (n >= 20) return json({ error: '오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요' }, 429);
+    await env.CACHE.put(rk, String(n + 1), { expirationTtl: 2 * 86400 });
+    const at = new Date().toISOString();
+    const key = SUG_PREFIX + at.replace(/[^0-9]/g, '') + '-' + Math.random().toString(36).slice(2, 8);
+    await env.CACHE.put(key, '', { metadata: { name, at }, expirationTtl: 365 * 86400 });
+    return json({ ok: true });
   }
 
   /* ---- 마감 알림 (웹 푸시) ---- */
