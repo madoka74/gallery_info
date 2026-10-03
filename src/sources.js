@@ -49,7 +49,7 @@ export const SOURCES = [
   { id: 'pkm', name: 'PKM 갤러리', addr: '종로구 삼청로7길 40', lat: 37.5823, lng: 126.9819, home: 'https://www.pkmgallery.com', url: 'https://www.pkmgallery.com', aliases: ['PKM갤러리','PKM Gallery'] },
   { id: 'leeahn', name: '리안갤러리 서울', addr: '종로구 창성동', lat: 37.5795, lng: 126.9757, home: 'http://www.leeahngallery.com', url: 'http://www.leeahngallery.com', branch: '서울 (대구 제외)' },
   { id: 'sun', name: '선화랑', addr: '종로구 인사동5길 8', lat: 37.5729, lng: 126.9852, home: 'http://www.sungallery.co.kr', url: 'http://www.sungallery.co.kr' },
-  { id: 'gana', name: '가나아트센터', addr: '종로구 평창30길 28', lat: 37.6046, lng: 126.9587, home: 'http://www.ganaart.com', url: 'http://www.ganaart.com', branch: '평창동 가나아트센터' },
+  { id: 'gana', name: '가나아트센터', addr: '종로구 평창30길 28', lat: 37.6046, lng: 126.9587, home: 'https://www.ganaart.com', url: 'https://www.ganaart.com/exhibition/', render: true, branch: '평창동 가나아트센터' },
 
   // ---- 갤러리: 한남·이태원 ----
   { id: 'ropac', name: '타데우스 로팍 서울', addr: '용산구 한남대로 122', lat: 37.5355, lng: 127.0060, home: 'https://ropac.net', url: 'https://ropac.net/exhibitions/', branch: 'Seoul', aliases: ['Thaddaeus Ropac'] },
@@ -84,7 +84,7 @@ export const SOURCES = [
   { id: 'leeahn-daegu', name: '리안갤러리 대구', addr: '대구 중구 달구벌대로 2077', home: 'http://www.leeahngallery.com', url: 'http://www.leeahngallery.com', branch: '대구 (서울 제외)', aliases: ['Leeahn Gallery Daegu'] },
   { id: 'wooyang', name: '우양미술관', addr: '경북 경주시 보문로 484-7', home: 'https://www.wooyangmuseum.org', url: 'https://www.wooyangmuseum.org/current', aliases: ['Wooyang Museum','아트선재미술관 경주'] },
   { id: 'solgeo', name: '경주솔거미술관', addr: '경북 경주시 경감로 614', home: 'https://www.gjsam.or.kr/ko/', url: 'https://www.gjsam.or.kr/ko/page.aspx?mnu_uid=78&', aliases: ['솔거미술관'] },
-  { id: 'poma', name: '포항시립미술관', addr: '경북 포항시 북구 환호공원길 10', home: 'http://poma.pohang.go.kr/', url: 'http://poma.pohang.go.kr/', aliases: ['POMA','포항시립미술관 POMA'] },
+  { id: 'poma', name: '포항시립미술관', addr: '경북 포항시 북구 환호공원길 10', home: 'https://poma.pohang.go.kr/poma/', url: 'https://poma.pohang.go.kr/poma/bbs/board.php?bo_table=exhibition&ketime=current', aliases: ['POMA','포항시립미술관 POMA'] },
   // 울산·경남
   { id: 'ulsan-art', name: '울산시립미술관', addr: '울산 중구 미술관길 72', home: 'https://www.ulsan.go.kr/s/uam/main.ulsan', url: 'https://www.ulsan.go.kr/s/uam/bbs/list.ulsan?bbsId=BBS_0000000000000174&mId=001003001000000000', aliases: ['Ulsan Art Museum'] },
   { id: 'gam', name: '경남도립미술관', addr: '경남 창원시 의창구 용지로 296', home: 'https://www.gyeongnam.go.kr/gam/index.gyeong', url: 'https://www.gyeongnam.go.kr/gam/index.gyeong?menuCd=DOM_000003401001000000', aliases: ['Gyeongnam Art Museum'] },

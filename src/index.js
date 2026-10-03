@@ -24,7 +24,7 @@ const SEOUL_URL = key => `http://openapi.seoul.go.kr:8088/${encodeURIComponent(k
 const BOX = { latMin: 33.0, latMax: 38.7, lngMin: 124.5, lngMax: 131.0 };
 const inBox = p => p.lat >= BOX.latMin && p.lat <= BOX.latMax && p.lng >= BOX.lngMin && p.lng <= BOX.lngMax;
 // 배포 확인용 버전. 고칠 때마다 올림 → /api/status, /api/refresh 응답에 그대로 나옴
-const VERSION = '2026-10-03.57';
+const VERSION = '2026-10-03.58';
 const PAGE_VENUES = 10;
 const SUG_PREFIX = 'sug:';          // 공간 제안 (값은 비우고 이름·시각은 메타데이터에)
 const DATASET_KEY = 'dataset:v1';

@@ -126,6 +126,7 @@ export async function scheduleRecrawl(env, ids) {
   await env.CACHE.put(CRAWL_KEY, JSON.stringify(state));
   return { scheduled: done.length, ids: done, skipped, hours: Math.ceil(done.length / 4) };
 }
+const CARRY_MS = 7 * 86400e3;
 const isTransient = msg => /^Gemini (429|5\d\d)|HTTP (5\d\d)|연결 실패|timed? ?out|렌더링 실패/i.test(msg);
 
 export async function crawlItems(env) {
@@ -247,10 +248,17 @@ async function crawlOne(env, src, prev, force) {
   }
   // 같은 전시를 매번 조금씩 다르게 읽어도(제목 한두 글자) 앞서 쓰던 제목·id를 그대로 유지 → 전시가 바뀌거나 NEW로 다시 뜨지 않게
   items = stabilize(items, prev.items || [], page.text);
+  // 이번에 못 읽은 진행 중 전시는 바로 지우지 않고 7일 동안 유지 (한 번 잘못 읽었다고 하트한 전시가 사라지지 않게).
+  // 7일 넘게 계속 안 보이면 그때 뺌
+  const now = Date.now(), todayK = new Date(now + 9 * 3600e3).toISOString().slice(0, 10);
+  items = items.map(e => ({ ...e, seen: now }));
+  const got = new Set(items.map(e => e.id));
+  const carried = (prev.items || []).filter(o => o.id && !got.has(o.id) && o.end >= todayK && now - (o.seen || prev.checkedAt || 0) < CARRY_MS);
+  items = items.concat(carried);
   items = await fillPosters(env, items);
   // 렌더링 한도 때문에 못 찾은 거면 지난 결과를 지우지 않고 1시간 뒤 다시
-  if (!items.length && /rate limit|2001|429/i.test(renderError)) throw new Error('브라우저 렌더링 실패(한도 초과): ' + renderError);
-  return { url, srcUrl: src.url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError };
+  if (items.length === carried.length && /rate limit|2001|429/i.test(renderError)) throw new Error('브라우저 렌더링 실패(한도 초과): ' + renderError);
+  return { url, srcUrl: src.url, hash: await sha1(page.text), ver: EXTRACT_VER, items, pending: r.pending.length, via: page.via, changed: true, renderError, carried: carried.length };
 }
 
 /* ---------- 포스터 보충: 목록에 그림이 없던 전시는 상세 페이지의 대표 이미지(og:image)를 씀 ----------
