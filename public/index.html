@@ -336,9 +336,10 @@ i.dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:cur
 .sbar{position:absolute;left:0;right:0;top:0;height:48px;display:flex;align-items:center;gap:8px;z-index:3;animation:sdown .22s ease}
 @keyframes sdown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
 .sbar .field{flex:1;min-width:0;height:44px;border-radius:12px;background:var(--surface);padding-left:38px}
-.sbar .sicon{position:absolute;left:12px;width:18px;height:18px;pointer-events:none;color:var(--muted);background:currentColor;-webkit-mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>') center/contain no-repeat;mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>') center/contain no-repeat}
+.sbar .sicon{position:absolute;left:12px;width:18px;height:18px;pointer-events:none;color:var(--muted);background:currentColor;-webkit-mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg>') center/contain no-repeat;mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/></svg>') center/contain no-repeat}
 .sbar .sclose{height:44px;padding:0 6px;font-size:14px;color:var(--accent);font-weight:600;flex:none}
 .view.searchmode>:not(#sres){display:none!important}
+#sres{display:contents} /* 결과 카드도 원래 목록처럼 화면 높이에 맞춰 한 장씩 */
 .sempty{height:120px;display:grid;place-items:center;color:var(--muted);font-size:14px}
 .kpin{display:flex;flex-direction:column;align-items:center;transform:translateY(8px)}
 .kpin.to{transform:translateY(10px)}
@@ -1642,7 +1643,7 @@ document.addEventListener('click',ev=>{
 save();
 show((location.hash||'').slice(1)||'near');
 // 예전 화면이 캐시에 남아 있으면 새 버전으로 한 번 새로 고침
-const APP_VER='2026-10-03.53';
+const APP_VER='2026-10-03.54';
 let verAt=0;
 function checkVer(){
   verAt=Date.now();
